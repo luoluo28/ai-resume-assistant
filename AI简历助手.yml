@@ -1,0 +1,729 @@
+app:
+  description: ''
+  icon: dolphin
+  icon_background: '#D3F8DF'
+  icon_type: emoji
+  mode: advanced-chat
+  name: AI简历助手
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: package
+  value:
+    plugin_unique_identifier: langgenius/ollama:0.2.2@ca494ed4382451200d8b0754fe390340306d4ca3bd8c28f736d52d97c31b4ba2
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables:
+  - description: ''
+    id: c2241a47-2862-4c6b-97d5-201f23ef80ec
+    name: user_profile
+    selector:
+    - conversation
+    - user_profile
+    value: ''
+    value_type: string
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      - document
+      allowed_file_upload_methods:
+      - remote_url
+      - local_file
+      enabled: true
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        file_upload_limit: 20
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: if-else
+      id: 1781018406513-source-1781140823757-target
+      source: '1781018406513'
+      sourceHandle: source
+      target: '1781140823757'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: 1781140823757-false-1781140888148-target
+      source: '1781140823757'
+      sourceHandle: 'false'
+      target: '1781140888148'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: assigner
+      id: 1781140888148-source-1781141302605-target
+      source: '1781140888148'
+      sourceHandle: source
+      target: '1781141302605'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: assigner
+        targetType: code
+      id: 1781141302605-source-1781143480128-target
+      source: '1781141302605'
+      sourceHandle: source
+      target: '1781143480128'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: assigner
+      id: 1781147049117-source-1781147067203-target
+      source: '1781147049117'
+      sourceHandle: source
+      target: '1781147067203'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: assigner
+        targetType: code
+      id: 1781147067203-source-1781147240273-target
+      source: '1781147067203'
+      sourceHandle: source
+      target: '1781147240273'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: document-extractor
+      id: 1781140823757-true-1781140744931-target
+      source: '1781140823757'
+      sourceHandle: 'true'
+      target: '1781140744931'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: llm
+      id: 1781143480128-source-1781148014889-target
+      source: '1781143480128'
+      sourceHandle: source
+      target: '1781148014889'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: llm
+      id: 1781147240273-source-1781148014889-target
+      source: '1781147240273'
+      sourceHandle: source
+      target: '1781148014889'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: document-extractor
+        targetType: llm
+      id: 1781140744931-source-1781147049117-target
+      source: '1781140744931'
+      sourceHandle: source
+      target: '1781147049117'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: llm
+      id: 1781148014889-source-1781148797076-target
+      source: '1781148014889'
+      sourceHandle: source
+      target: '1781148797076'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: answer
+      id: 1781148797076-source-1781151602932-target
+      source: '1781148797076'
+      sourceHandle: source
+      target: '1781151602932'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 用户输入
+        type: start
+        variables: []
+      height: 72
+      id: '1781018406513'
+      position:
+        x: 41.952565821859025
+        y: 335.4942253334601
+      positionAbsolute:
+        x: 41.952565821859025
+        y: 335.4942253334601
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        is_array_file: true
+        selected: false
+        title: 文档提取器
+        type: document-extractor
+        variable_selector:
+        - sys
+        - files
+      height: 103
+      id: '1781140744931'
+      position:
+        x: 684.952478333321
+        y: 356.4942253334601
+      positionAbsolute:
+        x: 684.952478333321
+        y: 356.4942253334601
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: contains
+            id: 757848c5-6d1c-49ca-81e4-46302c715599
+            sub_variable_condition:
+              case_id: 2445562f-44d2-4a1e-acc0-119a9f0a1406
+              conditions: []
+              logical_operator: and
+            value: ''
+            varType: array[file]
+            variable_selector:
+            - sys
+            - files
+          id: 'true'
+          logical_operator: and
+        selected: false
+        title: 条件分支 2
+        type: if-else
+      height: 123
+      id: '1781140823757'
+      position:
+        x: 347.0255570456112
+        y: 378.83030046342526
+      positionAbsolute:
+        x: 347.0255570456112
+        y: 378.83030046342526
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: true
+          variable_selector:
+          - sys
+          - query
+        memory:
+          query_prompt_template: '{{#sys.query#}}
+
+
+            {{#sys.files#}}'
+          role_prefix:
+            assistant: ''
+            user: ''
+          window:
+            enabled: false
+            size: 50
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: deepseek-r1:7b
+          provider: langgenius/ollama/ollama
+        prompt_template:
+        - id: c7c200a5-5c49-43f4-9972-8f4f5f9dea68
+          role: system
+          text: "{{#context#}}\n# 角色：你是简历信息提取专家\n# 任务：你的核心任务是从用户输入的文本中，提取出以下核心信息：\n\
+            # 目标岗位（Target Position）、教育经历（Education）、技能清单（Skills）、项目经历（Projects）、工龄（Experience）\n\
+            # 输出格式：请严格以JSON格式输出提取的信息，例如：\n{\n  \"target_position\": \"AI产品经理\",\n\
+            \  \"education\": \"XX大学\",\n  ... ...\n}"
+        selected: false
+        title: 字段提取
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1781140888148'
+      position:
+        x: 680
+        y: 567
+      positionAbsolute:
+        x: 680
+        y: 567
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        items:
+        - input_type: variable
+          operation: over-write
+          value:
+          - '1781140888148'
+          - text
+          variable_selector:
+          - conversation
+          - user_profile
+        selected: false
+        title: 变量赋值
+        type: assigner
+        version: '2'
+      height: 83
+      id: '1781141302605'
+      position:
+        x: 981
+        y: 567
+      positionAbsolute:
+        x: 981
+        y: 567
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        code: "def main(**kwargs):\n    # 读取Dify传入的变量，键名必须和节点里的输入变量名完全一致\n    arg1\
+          \ = kwargs.get(\"arg1\", \"\")\n    arg2 = kwargs.get(\"arg2\", \"\")\n\
+          \    \n    # 合并两段文本\n    full_resume_context = arg1 + arg2\n    \n    #\
+          \ 按Dify要求返回结果，键名必须和节点里的输出变量名完全一致\n    return {\n        \"result\": full_resume_context\n\
+          \    }"
+        code_language: python3
+        outputs:
+          result:
+            children: null
+            type: string
+        selected: false
+        title: 代码执行
+        type: code
+        variables:
+        - value_selector:
+          - '1781140888148'
+          - text
+          value_type: string
+          variable: arg1
+        - value_selector:
+          - conversation
+          - user_profile
+          value_type: string
+          variable: arg2
+      height: 51
+      id: '1781143480128'
+      position:
+        x: 1282
+        y: 567
+      positionAbsolute:
+        x: 1282
+        y: 567
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: true
+          variable_selector:
+          - '1781140744931'
+          - text
+        model:
+          completion_params:
+            temperature: 0.3
+          mode: chat
+          name: deepseek-r1:7b
+          provider: langgenius/ollama/ollama
+        prompt_template:
+        - id: 59ae5011-ad50-44e2-8b02-8358bb690462
+          role: system
+          text: "{{#context#}}# 角色\n你是一位专业的简历信息提取专家，擅长从简历文本中提取结构化字段。\n\n# 输入\n以下是用户上传的简历文件解析出的纯文本内容：\n\
+            {{#你的Document Extractor节点.outputs.text#}}\n\n# 任务\n从上述文本中提取以下5个必填字段（若某字段缺失，则输出空字符串\
+            \ \"\"）：\n1. target_position：目标求职岗位（提取最明确的一个，如“AI产品经理”“后端开发工程师”）\n2. education：教育经历（包含学校名称、学历层次、专业、毕业年份，格式示例：\"\
+            XX大学 本科 计算机科学与技术 2025\"）\n3. skills：技能清单（提取所有技术/工具/语言等技能，用逗号分隔）\n4. projects：项目/实习经历描述（保留关键描述，不要过度缩写）\n\
+            5. experience：工作年限或应届状态（提取数字+年，或“应届生”“在校生”）\n\n# 输出格式\n严格输出 JSON，不要包含任何其他解释文字：\n\
+            {\n  \"target_position\": \"...\",\n  \"education\": \"...\",\n  \"skills\"\
+            : \"...\",\n  \"projects\": \"...\",\n  \"experience\": \"...\"\n}"
+        selected: false
+        title: LLM 2
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1781147049117'
+      position:
+        x: 981
+        y: 408
+      positionAbsolute:
+        x: 981
+        y: 408
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        items:
+        - input_type: variable
+          operation: over-write
+          value:
+          - '1781147049117'
+          - text
+          variable_selector:
+          - conversation
+          - user_profile
+        selected: false
+        title: 变量赋值 2
+        type: assigner
+        version: '2'
+      height: 83
+      id: '1781147067203'
+      position:
+        x: 1282
+        y: 317.9544057783998
+      positionAbsolute:
+        x: 1282
+        y: 317.9544057783998
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        code: "\ndef main(**kwargs):\n    # 读取Dify传入的变量，键名必须和节点里的输入变量名完全一致\n    arg1\
+          \ = kwargs.get(\"arg1\", \"\")\n    arg2 = kwargs.get(\"arg2\", \"\")\n\
+          \    \n    # 合并两段文本\n    full_resume_context = arg1 + arg2\n    \n    #\
+          \ 按Dify要求返回结果，键名必须和节点里的输出变量名完全一致\n    return {\n        \"result\": full_resume_context\n\
+          \    }"
+        code_language: python3
+        outputs:
+          result:
+            children: null
+            type: string
+        selected: false
+        title: 代码执行 2
+        type: code
+        variables:
+        - value_selector:
+          - '1781147049117'
+          - text
+          value_type: string
+          variable: arg1
+        - value_selector:
+          - conversation
+          - user_profile
+          value_type: string
+          variable: arg2
+      height: 51
+      id: '1781147240273'
+      position:
+        x: 1551.2938048515493
+        y: 400.39051316437184
+      positionAbsolute:
+        x: 1551.2938048515493
+        y: 400.39051316437184
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: true
+          variable_selector:
+          - '1781143480128'
+          - result
+        memory:
+          query_prompt_template: '{{#sys.query#}}
+
+
+            {{#conversation.user_profile#}}'
+          role_prefix:
+            assistant: ''
+            user: ''
+          window:
+            enabled: false
+            size: 50
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: deepseek-r1:7b
+          provider: langgenius/ollama/ollama
+        prompt_template:
+        - id: 2dda881f-e897-48c7-a355-acb0d49d98d1
+          role: system
+          text: '{{#context#}}你是一位技术高超的人力资源招聘专家。请分析以下岗位，并生成结构化的分析报告：
+
+            ### 一、岗位需求硬性拆解（**硬门槛**）
+
+            - **学历与经验**：分析岗位对候选人的硬性要求。
+
+            - **核心必备技能**：列举 JD 和技术栈要求中反复出现的、明确的硬性条件。
+
+            ### 二、岗位软实力洞察（**软实力**）
+
+            - 根据 JD 描述，解读该岗位可能需要的**问题解决能力**、**团队协作方式**、**抗压能力**等。
+
+            ### 三、市场供需与动态博弈分析（**从公司角度看供需**）
+
+            *   **招聘紧迫性分析**：根据职位是否重复发布、招聘渠道等，分析公司的招聘紧急程度。
+
+            *   **技能稀缺性洞察**：分析哪些技能是目前稀缺的，突出市场价值。
+
+            *   **信息来源**：明确标注分析所依据的外部信息源。'
+        - id: dae18b3c-9160-4c26-938a-176121b465ca
+          role: user
+          text: '用户画像信息：
+
+            {{user_profile}}
+
+
+            完整简历文本：
+
+            {{full_resume_context}}
+
+
+            用户提供的岗位信息（JD）：
+
+            {{userputquery}}
+
+
+            请根据以上信息，完成岗位需求拆解与供需分析：
+
+            1.  拆解岗位的硬性门槛（学历、工作年限、技能要求）
+
+            2.  拆解岗位的软性能力要求（沟通、协作、行业经验）
+
+            3.  分析当前简历与岗位的供需匹配度，找出差距
+
+            4.  输出结构化的分析报告，包含以上所有要点'
+        - id: 6134e659-8f87-4ed8-b9b5-76e06affab69
+          role: assistant
+          text: '用户画像信息：
+
+            {{user_profile}}
+
+
+            完整简历文本：
+
+            {{#conversation.user_profile#}}
+
+
+            用户提供的岗位信息（JD）：
+
+            {{#sys.query#}}
+
+
+            请根据以上信息，完成岗位需求拆解与供需分析：
+
+            1.  拆解岗位的硬性门槛（学历、工作年限、技能要求）
+
+            2.  拆解岗位的软性能力要求（沟通、协作、行业经验）
+
+            3.  分析当前简历与岗位的供需匹配度，找出差距
+
+            4.  输出结构化的分析报告，包含以上所有要点'
+        selected: false
+        structured_output_enabled: true
+        title: 岗位需求拆解
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1781148014889'
+      position:
+        x: 1879.7699865894997
+        y: 493.4416272555941
+      positionAbsolute:
+        x: 1879.7699865894997
+        y: 493.4416272555941
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: true
+          variable_selector:
+          - '1781148014889'
+          - text
+        memory:
+          query_prompt_template: '{{#sys.query#}}
+
+            {{#1781148014889.text#}}{{#conversation.user_profile#}}
+
+            {{#sys.files#}}'
+          role_prefix:
+            assistant: ''
+            user: ''
+          window:
+            enabled: false
+            size: 50
+        model:
+          completion_params:
+            temperature: 0.3
+          mode: chat
+          name: deepseek-r1:7b
+          provider: langgenius/ollama/ollama
+        prompt_template:
+        - id: 1b1f8796-182b-4a93-803d-b3ec99871bfa
+          role: system
+          text: '{{#context#}}你是一位资深的 AI 方向简历优化顾问。你的任务是根据用户简历和岗位分析，输出可直接复制的优化内容。
+
+            ### 优化原则
+
+            1.  **真实性锚定**：**严禁编造不存在的项目、经历或技能**。
+
+            2.  **量化成果**：所有经历和项目都必须有量化数据支撑。
+
+            3.  **STAR 法则**：将校园项目或工作经历，按照 STAR 法则重组。
+
+            4.  **专业性**：将所有口语化表达转换为专业术语。
+
+            ### 输出格式（请严格遵守）
+
+            **1. 优化后简历（全文）**
+
+            [此处放置优化后的完整简历]
+
+            **2. 核心优化说明**
+
+            - **项目经历**：[做了什么优化，为什么这么做]
+
+            - **技能清单**：[做了什么优化，为什么这么做]
+
+            **3. 岗位匹配度评估与建议**
+
+            - **匹配分数**：[0-100%]
+
+            - **优势分析**：[用户与JD非常匹配的优势]
+
+            - **差距与建议**：[提升的方向，例如完善某类技能或补充某个项目类型]'
+        - id: 85f858ac-fe4b-4c2c-947b-858cc5e92839
+          role: user
+          text: ''
+        selected: false
+        structured_output_enabled: true
+        title: 简历优化
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1781148797076'
+      position:
+        x: 2180.7699865894997
+        y: 493.4416272555941
+      positionAbsolute:
+        x: 2180.7699865894997
+        y: 493.4416272555941
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        answer: '{{#1781148797076.text#}}{{#1781148014889.text#}}'
+        selected: false
+        title: 直接回复
+        type: answer
+        variables: []
+      height: 121
+      id: '1781151602932'
+      position:
+        x: 2481.7699865894997
+        y: 493.4416272555941
+      positionAbsolute:
+        x: 2481.7699865894997
+        y: 493.4416272555941
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    viewport:
+      x: -931.2030398179475
+      y: 125.27529388003336
+      zoom: 0.599746777951885
+  rag_pipeline_variables: []
