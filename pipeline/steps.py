@@ -119,9 +119,10 @@ def _dump(run_dir: Path, name: str, obj: dict) -> None:
     )
 
 
-def run_pipeline(resume_text: str, jd_text: str, company_text: str = "") -> dict:
+def run_pipeline(resume_text: str, jd_text: str, company_text: str = "", *, run_dir=None) -> dict:
     """串联四步；每步落中间文件；任一步失败抛 StepError（不静默跳过）。"""
-    run_dir = _new_run_dir()
+    run_dir = Path(run_dir) if run_dir else _new_run_dir()
+    run_dir.mkdir(parents=True, exist_ok=True)
 
     profile = profile_extract(resume_text)
     _dump(run_dir, "01_profile.json", profile)
