@@ -1,0 +1,6 @@
+pdfplumber
+rapidocr-onnxruntime
+openpyxl
+pandas
+playwright
+requests
