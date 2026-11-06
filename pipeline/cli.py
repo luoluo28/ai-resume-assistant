@@ -24,6 +24,8 @@ def _run(args: argparse.Namespace) -> int:
     print(steps.render_advice(result["advice"]))
     print("\n--- 结构化 JSON ---")
     print(json.dumps(result["advice"], ensure_ascii=False, indent=2))
+    print("\n--- 评分 / 覆盖率 ---")
+    print(json.dumps(result["scoring"], ensure_ascii=False, indent=2))
     print("\n中间产物目录:", result["run_dir"])
     return 0
 

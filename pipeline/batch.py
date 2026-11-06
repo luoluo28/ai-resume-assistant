@@ -45,7 +45,7 @@ def run_batch(resume_text: str, jobs: list[dict], *, run_dir=None) -> dict:
             r = steps.run_pipeline(
                 resume_text, job["jd"], job.get("company", ""), run_dir=job_dir
             )
-            results.append({"index": i, "ok": True, "advice": r["advice"]})
+            results.append({"index": i, "ok": True, "advice": r["advice"], "scoring": r["scoring"]})
         except steps.StepError as e:
             results.append({"index": i, "ok": False, "step": e.step, "error": str(e)})
 

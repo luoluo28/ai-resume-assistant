@@ -10,7 +10,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from . import llm, schema
+from . import llm, schema, scoring
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -140,7 +140,10 @@ def run_pipeline(resume_text: str, jd_text: str, company_text: str = "", *, run_
     _dump(run_dir, "04_apply_advice.json", advice)
     _ensure_no_error(advice, "apply_advice")
 
-    return {"run_dir": str(run_dir), "advice": advice}
+    sc = scoring.compute(profile, jd, values)
+    _dump(run_dir, "05_scoring.json", sc)
+
+    return {"run_dir": str(run_dir), "advice": advice, "scoring": sc}
 
 
 if __name__ == "__main__":
