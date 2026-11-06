@@ -1,12 +1,38 @@
-"""流水线数据结构。json_schema_version: resume-advice-v1。
-
-切片 3 只用 Profile；其余步骤的数据结构随切片 4 补齐。
-"""
+"""流水线数据结构。json_schema_version: resume-advice-v1。"""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 
 JSON_SCHEMA_VERSION = "resume-advice-v1"
+
+
+def _str(v):
+    return str(v).strip() if v is not None else ""
+
+
+def _list(v):
+    if isinstance(v, list):
+        return v
+    return [] if v is None else [v]
+
+
+def _int(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _bool(v):
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        return v.strip().lower() in ("true", "1", "yes", "是")
+    return bool(v)
+
+
+def _dict(v):
+    return v if isinstance(v, dict) else {}
 
 
 @dataclass
@@ -18,26 +44,96 @@ class Profile:
     skills: str = ""
     projects: str = ""
     experience: str = ""
-    missing: list[str] = field(default_factory=list)
+    missing: list = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, d: dict | None) -> "Profile":
+    def from_dict(cls, d):
         d = d or {}
-
-        def s(v) -> str:
-            return str(v).strip() if v is not None else ""
-
-        missing = d.get("missing", [])
-        if not isinstance(missing, list):
-            missing = []
         return cls(
-            target_position=s(d.get("target_position")),
-            education=s(d.get("education")),
-            skills=s(d.get("skills")),
-            projects=s(d.get("projects")),
-            experience=s(d.get("experience")),
-            missing=[str(x) for x in missing],
+            target_position=_str(d.get("target_position")),
+            education=_str(d.get("education")),
+            skills=_str(d.get("skills")),
+            projects=_str(d.get("projects")),
+            experience=_str(d.get("experience")),
+            missing=[_str(x) for x in _list(d.get("missing"))],
         )
 
-    def to_dict(self) -> dict:
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class JdAnalysis:
+    """第二步 jd_analysis 的输出：岗位需求拆解。"""
+
+    hard_requirements: list = field(default_factory=list)
+    keywords_weighted: list = field(default_factory=list)
+    soft_skills: list = field(default_factory=list)
+    veto: dict = field(default_factory=lambda: {"blocked": False, "reason": ""})
+    jd_summary: str = ""
+
+    @classmethod
+    def from_dict(cls, d):
+        d = d or {}
+        return cls(
+            hard_requirements=_list(d.get("hard_requirements")),
+            keywords_weighted=_list(d.get("keywords_weighted")),
+            soft_skills=[_str(x) for x in _list(d.get("soft_skills"))],
+            veto=_dict(d.get("veto")),
+            jd_summary=_str(d.get("jd_summary")),
+        )
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class CompanyValues:
+    """第三步 company_values 的输出：企业价值观分析。"""
+
+    need_company_info: bool = False
+    labels: list = field(default_factory=list)
+    hire_profile: str = ""
+
+    @classmethod
+    def from_dict(cls, d):
+        d = d or {}
+        return cls(
+            need_company_info=_bool(d.get("need_company_info")),
+            labels=_list(d.get("labels")),
+            hire_profile=_str(d.get("hire_profile")),
+        )
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class ApplyAdvice:
+    """第四步 apply_advice 的输出：投递建议。"""
+
+    position: str = ""
+    conclusion: str = ""
+    score: int = 0
+    reasons: list = field(default_factory=list)
+    gaps: list = field(default_factory=list)
+    advice: str = ""
+    opening_line: str = ""
+    note: str = ""
+
+    @classmethod
+    def from_dict(cls, d):
+        d = d or {}
+        return cls(
+            position=_str(d.get("position")),
+            conclusion=_str(d.get("conclusion")),
+            score=_int(d.get("score")),
+            reasons=[_str(x) for x in _list(d.get("reasons"))],
+            gaps=[_str(x) for x in _list(d.get("gaps"))],
+            advice=_str(d.get("advice")),
+            opening_line=_str(d.get("opening_line")),
+            note=_str(d.get("note")),
+        )
+
+    def to_dict(self):
         return asdict(self)
