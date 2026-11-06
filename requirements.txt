@@ -1,4 +1,5 @@
 pdfplumber
+pypdfium2  # pdfplumber 渲染后端（扫描件 PDF -> 图像 -> OCR）
 rapidocr-onnxruntime
 openpyxl
 pandas
