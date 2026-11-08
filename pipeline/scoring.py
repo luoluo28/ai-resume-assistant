@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import re
+import sys
 
 
 def _norm(s: str) -> str:
@@ -58,6 +59,9 @@ WEIGHTS = {"technical": 0.30, "experience": 0.25, "behavioral": 0.15, "career": 
 
 def weighted_score(scores: dict) -> int:
     """五维加权总分（technical 30 / experience 25 / behavioral 15 / career 30）。"""
+    unknown = [k for k in scores if k not in WEIGHTS]
+    if unknown:
+        print(f"[warn] 未参与加权的维度被忽略: {', '.join(unknown)}", file=sys.stderr)
     total = sum(float(scores.get(k, 0) or 0) * w for k, w in WEIGHTS.items())
     return int(round(total))
 
