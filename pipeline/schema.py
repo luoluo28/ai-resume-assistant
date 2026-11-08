@@ -123,6 +123,7 @@ class ApplyAdvice:
     advice: str = ""
     opening_line: str = ""
     note: str = ""
+    status: str = "待投"  # 由 ledger 维护，LLM 不产出
 
     @classmethod
     def from_dict(cls, d):

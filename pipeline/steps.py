@@ -12,7 +12,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from . import llm, schema, scoring
+from . import ledger, llm, schema, scoring
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -227,6 +227,8 @@ def run_pipeline(resume_text: str, jd_text: str, company_text: str = "", *, run_
 
     cov = scoring.keyword_coverage_report(profile, jd)
     _dump(run_dir, "05_coverage.json", cov)
+
+    ledger.upsert(jd_text, advice, str(run_dir))
 
     return {"run_dir": str(run_dir), "advice": advice, "coverage": cov}
 

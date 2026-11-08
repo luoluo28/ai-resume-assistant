@@ -15,7 +15,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import batch, export, feishu, ingest, steps
+from . import batch, export, feishu, ingest, ledger, steps
 
 
 def _run(args: argparse.Namespace) -> int:
@@ -74,6 +74,30 @@ def _feishu(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ledger(args: argparse.Namespace) -> int:
+    if args.stats:
+        for k, v in ledger.stats().items():
+            print(f"{k}: {v}")
+        return 0
+    if args.set:
+        if not args.status:
+            print("--set 需要配合 --status", file=sys.stderr)
+            return 2
+        n = ledger.set_status(args.set, args.status)
+        print(f"已更新 {n} 条：{args.set} → {args.status}")
+        return 0
+    entries = ledger.list_entries(args.status)
+    if not entries:
+        print("（无台账记录）")
+        return 0
+    for e in entries:
+        print(
+            f"{e['position']}  分数={e['score']}  {e['verdict']}  "
+            f"地点={e['location_verdict']}  {e['status']}  更新={e['last_seen']}"
+        )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pipeline", description="求职投递建议流水线")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -101,6 +125,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_feishu.add_argument("--app-token", required=True, help="多维表格 app_token")
     p_feishu.add_argument("--table-id", required=True, help="数据表 table_id")
     p_feishu.set_defaults(func=_feishu)
+
+    p_ledger = sub.add_parser("ledger", help="投递台账")
+    p_ledger.add_argument("--list", action="store_true", help="列出台账（默认动作）")
+    p_ledger.add_argument("--set", metavar="position", help="按岗位名改状态（配合 --status）")
+    p_ledger.add_argument("--stats", action="store_true", help="各状态计数")
+    p_ledger.add_argument("--status", choices=list(ledger.STATUSES), help="状态筛选 / 设置")
+    p_ledger.set_defaults(func=_ledger)
     return parser
 
 

@@ -220,3 +220,4 @@ __marimo__/
 # Pipeline data (intermediate artifacts)
 data/runs/
 data/cache/
+data/ledger.jsonl
