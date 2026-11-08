@@ -25,7 +25,8 @@ AI-powered resume analyzer for job applications
 # 单次（--title 可选，不给则从 JD 首行机械提取岗位名）
 python -m pipeline.cli run --resume <path> --jd <path> [--company <path>] [--title <岗位名>]
 
-# 批量（jobs.jsonl 每行一个岗位：{"title":"岗位名","jd":"file:路径 或 纯文本","company":"..."}）
+# 批量（jobs.jsonl 每行：{"title":"岗位名","jd":"file:路径 或 纯文本","company":"..."}）
+# ⚠️ jd/company 是文件路径时必须加 file: 前缀，否则会被当成纯文本分析
 python -m pipeline.cli batch --resume <path> --jobs data/jobs.jsonl
 
 # 导出
