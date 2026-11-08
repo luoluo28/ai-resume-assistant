@@ -10,6 +10,7 @@
   body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
          max-width: 720px; margin: 0 auto; padding: 16px; line-height: 1.6; color: #1f2937; }
   h1 { font-size: 20px; }
+  #status { color: #6b7280; font-size: 13px; margin-bottom: 14px; line-height: 1.5; }
   label { display: block; margin: 12px 0 4px; font-weight: 600; }
   textarea, input[type=text], input[type=password] { width: 100%; box-sizing: border-box;
          padding: 8px; font-size: 15px; border: 1px solid #d1d5db; border-radius: 6px; }
@@ -22,6 +23,8 @@
   .card { margin-top: 16px; padding: 14px; border: 1px solid #e5e7eb; border-radius: 10px; }
   .card h2 { font-size: 16px; margin: 0 0 8px; }
   .conclusion { font-size: 18px; font-weight: 700; }
+  .dims { color: #374151; font-size: 14px; margin: 4px 0; }
+  .locfail { color: #b91c1c; font-weight: 700; }
   ol, ul { margin: 6px 0; padding-left: 20px; }
   #login { max-width: 360px; margin: 40px auto; }
 </style>
@@ -36,6 +39,7 @@
 
 <div id="app" hidden>
   <h1>AI简历助手</h1>
+  <div id="status"></div>
 
   <label>岗位名（可选，不给则从 JD 首行提取）</label>
   <input id="position" type="text" placeholder="例如：后端开发工程师">
@@ -59,6 +63,21 @@
 <script>
 const STEP_NAMES = ["", "提取简历信息", "分析岗位需求", "分析企业价值观", "生成投递建议"];
 let taskId = null;
+
+function dimsText(scores) {
+  const labels = { technical: "技术", experience: "经验", behavioral: "软实力", career: "职业" };
+  if (!scores) return "";
+  return Object.entries(labels).map(([k, v]) => v + " " + (scores[k] ?? "?")).join(" · ");
+}
+
+async function loadStatus() {
+  try {
+    const r = await fetch("/api/status");
+    const s = await r.json();
+    document.getElementById("status").textContent =
+      "简历：" + (s.resume_name || "未选择") + " ｜ JD 文件：" + s.jd_count + " 个 ｜ 上次运行：" + (s.last_run || "无");
+  } catch (e) {}
+}
 
 async function login() {
   const fd = new FormData();
@@ -105,9 +124,13 @@ async function showResult() {
   const r = await fetch("/api/task/" + taskId + "/result");
   const { advice, coverage } = await r.json();
   const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  const locFail = advice.location_verdict === "FAIL"
+    ? '<span class="locfail"> 地点 FAIL，已一票否决</span>' : "";
   let html = '<div class="card"><div class="conclusion">' + esc(advice.conclusion)
-    + (advice.score ? "（匹配度 " + esc(advice.score) + "%）" : "") + "</div>"
+    + (advice.score ? "（匹配度 " + esc(advice.score) + "%）" : "") + locFail + "</div>"
     + "<p><b>岗位：</b>" + esc(advice.position) + "</p>"
+    + "<p><b>分档：</b>" + esc(advice.verdict) + "  <b>地点：</b>" + esc(advice.location_verdict) + "</p>"
+    + '<p class="dims"><b>四维：</b>' + dimsText(advice.scores) + "</p>"
     + "<h2>理由</h2><ol>" + (advice.reasons || []).map(x => "<li>" + esc(x) + "</li>").join("") + "</ol>"
     + "<h2>差什么</h2><ul>" + (advice.gaps || []).map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>"
     + "<h2>怎么补</h2><p>" + esc(advice.advice) + "</p>"
@@ -121,6 +144,7 @@ async function showResult() {
       + "<p><b>缺失：</b>" + esc((coverage.missing || []).join("、")) + "</p></div>";
   }
   document.getElementById("result").innerHTML = html;
+  loadStatus();
 }
 
 async function exportFile(format) {
@@ -136,8 +160,8 @@ async function exportFile(format) {
 // 启动时探一次是否需要口令
 fetch("/api/task/__probe__").then(r => {
   if (r.status === 401) document.getElementById("login").hidden = false;
-  else showApp();
-}).catch(() => showApp());
+  else { showApp(); loadStatus(); }
+}).catch(() => { showApp(); loadStatus(); });
 </script>
 </body>
 </html>

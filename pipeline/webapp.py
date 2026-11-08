@@ -1,14 +1,15 @@
 """本地 Web 服务：浏览器/手机访问，异步任务 + 轮询。
 
 启动：
-    python -m pipeline.webapp [--host 0.0.0.0] [--port 8000] [--password <口令>]
+    python -m pipeline.webapp [--host 127.0.0.1] [--port 8000] [--password <口令>]
 
-口令：若指定（或环境变量 WEB_PASSWORD），则需校验后写 cookie。
+默认只绑 127.0.0.1；手机/局域网访问需 --host 0.0.0.0，此时必须设口令。
 cloudflared 隧道是公网可见的，务必设口令或「用完就关」。
 """
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 import threading
 import time
@@ -23,7 +24,9 @@ from fastapi.staticfiles import StaticFiles
 from . import export, steps
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _PASSWORD = os.environ.get("WEB_PASSWORD", "")
+_state = {"resume_name": "", "last_run": ""}
 _executor = ThreadPoolExecutor(max_workers=2)
 _tasks: dict = {}
 _lock = threading.Lock()
@@ -72,6 +75,8 @@ def analyze(
     token: str | None = Cookie(default=None),
 ):
     _require_auth(token)
+    if resume_file is not None and resume_file.filename:
+        _state["resume_name"] = resume_file.filename
     resume = resume_text.strip() or _read_upload(resume_file)
     jd = jd_text.strip() or _read_upload(jd_file)
     if not resume or not jd:
@@ -95,6 +100,7 @@ def _run_task(task_id: str, resume: str, jd: str, company: str, position: str) -
         result = steps.run_pipeline(resume, jd, company, position=position, on_step=on_step)
         with _lock:
             _tasks[task_id].update(status="done", result=result, elapsed=round(time.time() - t0, 1))
+            _state["last_run"] = time.strftime("%Y-%m-%d %H:%M:%S")
     except Exception as e:  # noqa: BLE001
         with _lock:
             _tasks[task_id].update(status="error", error=str(e), elapsed=round(time.time() - t0, 1))
@@ -141,6 +147,17 @@ def task_export(task_id: str, format: str = "xlsx", token: str | None = Cookie(d
     raise HTTPException(status_code=400, detail="format 只支持 xlsx|pdf")
 
 
+@app.get("/api/status")
+def status():
+    jd_dir = DATA_DIR / "jobs"
+    jd_count = len(list(jd_dir.glob("*"))) if jd_dir.exists() else 0
+    return {
+        "resume_name": _state["resume_name"],
+        "jd_count": jd_count,
+        "last_run": _state["last_run"],
+    }
+
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -149,24 +166,28 @@ def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
-def main(argv=None) -> None:
+def main(argv=None) -> int:
     global _PASSWORD
     import argparse
 
     parser = argparse.ArgumentParser(description="本地 Web 服务")
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--host", default="127.0.0.1", help="默认 127.0.0.1；手机访问用 0.0.0.0（需口令）")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--password", default=_PASSWORD, help="访问口令（公网隧道务必设置）")
+    parser.add_argument("--password", default=_PASSWORD, help="访问口令（公网/局域网务必设置）")
     args = parser.parse_args(argv)
 
     _PASSWORD = args.password or os.environ.get("WEB_PASSWORD", "")
     if _PASSWORD:
         print("已启用口令保护")
+    if not args.host.startswith("127.") and args.host != "localhost" and not _PASSWORD:
+        print("错误：--host 0.0.0.0（局域网/公网可达）时必须设置 --password 口令，否则拒绝启动", file=sys.stderr)
+        return 1
 
     import uvicorn
 
     uvicorn.run(app, host=args.host, port=args.port)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
