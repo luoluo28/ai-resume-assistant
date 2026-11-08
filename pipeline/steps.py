@@ -158,25 +158,36 @@ def _dump(run_dir: Path, name: str, obj: dict) -> None:
     )
 
 
-def run_pipeline(resume_text: str, jd_text: str, company_text: str = "", *, run_dir=None, position=None) -> dict:
-    """串联四步；每步落中间文件；任一步失败抛 StepError（不静默跳过）。"""
+def run_pipeline(resume_text: str, jd_text: str, company_text: str = "", *, run_dir=None, position=None, on_step=None) -> dict:
+    """串联四步；每步落中间文件；任一步失败抛 StepError（不静默跳过）。
+
+    on_step(n: int, name: str) 可选回调，用于上报进度（如 Web 服务轮询）。
+    """
     run_dir = Path(run_dir) if run_dir else _new_run_dir()
     run_dir.mkdir(parents=True, exist_ok=True)
 
+    def _step(n: int, name: str) -> None:
+        if on_step:
+            on_step(n, name)
+
     position = position or _position_from_jd(jd_text) or "未提供岗位名"
 
+    _step(1, "profile_extract")
     profile = profile_extract(resume_text)
     _dump(run_dir, "01_profile.json", profile)
     _ensure_no_error(profile, "profile_extract")
 
+    _step(2, "jd_analysis")
     jd = jd_analysis(jd_text, profile)
     _dump(run_dir, "02_jd_analysis.json", jd)
     _ensure_no_error(jd, "jd_analysis")
 
+    _step(3, "company_values")
     values = company_values(company_text, jd_text)
     _dump(run_dir, "03_company_values.json", values)
     _ensure_no_error(values, "company_values")
 
+    _step(4, "apply_advice")
     advice = apply_advice(profile, jd, values, position=position)
     _dump(run_dir, "04_apply_advice.json", advice)
     _ensure_no_error(advice, "apply_advice")

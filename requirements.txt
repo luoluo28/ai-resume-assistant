@@ -4,3 +4,6 @@ rapidocr-onnxruntime
 openpyxl
 playwright
 requests
+fastapi
+uvicorn
+python-multipart
