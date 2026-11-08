@@ -14,7 +14,7 @@ _HEADERS = ["岗位名", "结论", "分数", "分档", "四维", "地点判定",
 
 
 _DIM_SHORT = {"technical": "技", "experience": "经", "behavioral": "软", "career": "职"}
-_DIM_LABELS = {"technical": "技术", "experience": "经验", "behavioral": "软实力", "career": "职业"}
+_DIM_LABELS = {"technical": "技术 ", "experience": "经验 ", "behavioral": "软实力 ", "career": "职业 "}
 
 
 def _dims_str(scores: dict, labels: dict) -> str:
