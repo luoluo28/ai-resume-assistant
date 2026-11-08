@@ -18,8 +18,12 @@ def load_jobs(path: str | Path) -> list[dict]:
     title 为岗位名（可选，透传给 run_pipeline）。
     若字段「看起来像文件路径」却缺 file: 前缀，直接抛错（避免静默把路径当 JD 文本分析）。
     """
+    try:
+        lines = Path(path).read_text(encoding="utf-8-sig").splitlines()
+    except UnicodeDecodeError as e:
+        raise ValueError(f"岗位文件编码有问题（应为 UTF-8）：{e}") from e
     jobs = []
-    for i, line in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), 1):
+    for i, line in enumerate(lines, 1):
         line = line.strip()
         if not line:
             continue
@@ -55,8 +59,12 @@ def _resolve(text_or_path: str) -> str:
     return text_or_path
 
 
-def run_batch(resume_text: str, jobs: list[dict], *, run_dir=None, jobs_path=None) -> dict:
-    """循环跑所有岗位；单个失败记录到结果并逐条落盘，不中断整体。"""
+def run_batch(resume_text: str, jobs: list[tuple[int, dict]], *, run_dir=None, jobs_path=None) -> dict:
+    """循环跑所有岗位；单个失败记录到结果并逐条落盘，不中断整体。
+
+    jobs 为 [(原始行号, job), ...]：原始行号写进 rec["index"]，
+    使 --retry-failed 能回溯到 jobs.jsonl 的真实行，而不是子集序号。
+    """
     if run_dir is None:
         ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         run_dir = steps.DATA_DIR / "runs" / ts
@@ -72,7 +80,7 @@ def run_batch(resume_text: str, jobs: list[dict], *, run_dir=None, jobs_path=Non
     results_file.write_text("", encoding="utf-8")  # 清空旧文件
 
     results = []
-    for i, job in enumerate(jobs):
+    for i, job in jobs:
         job_dir = run_dir / f"job-{i:02d}"
         try:
             r = steps.run_pipeline(
@@ -87,6 +95,7 @@ def run_batch(resume_text: str, jobs: list[dict], *, run_dir=None, jobs_path=Non
             rec = {
                 "index": i,
                 "ok": False,
+                "title": job.get("title", ""),
                 "step": getattr(e, "step", None),
                 "error_type": type(e).__name__,
                 "error": str(e),

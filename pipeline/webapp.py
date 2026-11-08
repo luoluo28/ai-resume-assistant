@@ -17,15 +17,25 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from fastapi import Cookie, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+try:
+    from fastapi import Cookie, FastAPI, File, Form, HTTPException, UploadFile
+    from fastapi.responses import FileResponse, JSONResponse
+    from fastapi.staticfiles import StaticFiles
+except ImportError as e:  # 友好降级：缺依赖给安装提示，而不是甩 Traceback
+    sys.stderr.write(
+        "启动 Web 服务缺少依赖（fastapi / uvicorn / python-multipart）。\n"
+        "请先安装：\n"
+        "  python -m ensurepip --upgrade\n"
+        "  pip install fastapi uvicorn python-multipart\n"
+        f"原始错误：{e}\n"
+    )
+    raise SystemExit(1)
 
 from . import export, steps
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _PASSWORD = os.environ.get("WEB_PASSWORD", "")
+_SESSIONS: set = set()
 _state = {"resume_name": "", "last_run": ""}
 _executor = ThreadPoolExecutor(max_workers=2)
 _tasks: dict = {}
@@ -51,7 +61,7 @@ def _read_upload(f: UploadFile | None) -> str:
 
 
 def _require_auth(token: str | None = Cookie(default=None)) -> None:
-    if _PASSWORD and token != _PASSWORD:
+    if _PASSWORD and token not in _SESSIONS:
         raise HTTPException(status_code=401, detail="需要口令")
 
 
@@ -59,8 +69,10 @@ def _require_auth(token: str | None = Cookie(default=None)) -> None:
 def login(password: str = Form(...)):
     if _PASSWORD and password != _PASSWORD:
         raise HTTPException(status_code=401, detail="口令错误")
+    token = uuid.uuid4().hex
+    _SESSIONS.add(token)
     resp = JSONResponse({"ok": True})
-    resp.set_cookie("pipeline_token", _PASSWORD or "open", httponly=True, samesite="lax")
+    resp.set_cookie("pipeline_token", token, httponly=True, samesite="lax")
     return resp
 
 
@@ -148,12 +160,10 @@ def task_export(task_id: str, format: str = "xlsx", token: str | None = Cookie(d
 
 
 @app.get("/api/status")
-def status():
-    jd_dir = DATA_DIR / "jobs"
-    jd_count = len(list(jd_dir.glob("*"))) if jd_dir.exists() else 0
+def status(token: str | None = Cookie(default=None)):
+    _require_auth(token)
     return {
         "resume_name": _state["resume_name"],
-        "jd_count": jd_count,
         "last_run": _state["last_run"],
     }
 

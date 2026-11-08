@@ -15,7 +15,7 @@ AI-powered resume analyzer for job applications
 ## 目录
 
 - `prompts/`：四个步骤的 prompt（从 Dify 版语义一致迁移）
-- `pipeline/`：ingest / llm / schema / steps / scoring / export / feishu / batch / collect / cli
+- `pipeline/`：ingest / llm / schema / steps / scoring / export / feishu / batch / collect / ledger / guard / webapp / cli
 - `data/`：岗位输入 `jobs.jsonl` 与运行产物 `runs/`
 - `AI简历助手.yml`：Dify 版 DSL（已冻结，仅作输出对照基线，不再修改）
 
@@ -35,6 +35,20 @@ python -m pipeline.cli export --advice data/runs/<ts>/04_apply_advice.json --xls
 
 # 飞书写入（凭据走 .env）
 python -m pipeline.cli feishu --advice data/runs/<ts>/04_apply_advice.json --app-token <t> --table-id <t>
+```
+
+## Web 模式（浏览器 / 手机）
+
+```bash
+# 首次运行前先装 Web 依赖（若已 pip 装过可跳过）
+python -m ensurepip --upgrade
+pip install -r requirements.txt
+
+# 本机访问
+python -m pipeline.webapp --port 8000     # 打开 http://127.0.0.1:8000
+
+# 手机 / 局域网访问：必须设口令
+python -m pipeline.webapp --host 0.0.0.0 --port 8000 --password <你的口令>
 ```
 
 ## 模型与密钥

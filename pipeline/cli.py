@@ -50,13 +50,13 @@ def _batch(args: argparse.Namespace) -> int:
             print("无法定位上次的 jobs 文件，请用 --jobs 指定", file=sys.stderr)
             return 1
         all_jobs = batch.load_jobs(jobs_path)
-        jobs = [all_jobs[i] for i in failed if i < len(all_jobs)]
+        jobs = [(i, all_jobs[i]) for i in failed if i < len(all_jobs)]
         print(f"本次只重跑 {len(jobs)} 条（上次 {len(all_jobs)} 个岗位中失败 {len(failed)} 条），预计最多 {len(jobs) * 4} 次调用")
     else:
         if not jobs_path:
             print("需要 --jobs 指定岗位文件", file=sys.stderr)
             return 2
-        jobs = batch.load_jobs(jobs_path)
+        jobs = list(enumerate(batch.load_jobs(jobs_path)))
     if args.max_jobs and args.max_jobs > 0 and len(jobs) > args.max_jobs:
         total = len(jobs)
         jobs = jobs[: args.max_jobs]
@@ -70,7 +70,7 @@ def _batch(args: argparse.Namespace) -> int:
             a = r["advice"]
             print(f"  [OK] {a.get('position', '')} 结论={a.get('conclusion', '')} 分数={a.get('score', '')}")
         else:
-            print(f"  [失败] step={r.get('step', '')} type={r.get('error_type', '')} {r.get('error', '')}")
+            print(f"  [失败] {r.get('title', '')} step={r.get('step', '')} type={r.get('error_type', '')} {r.get('error', '')}")
     advices = [r["advice"] for r in results if r["ok"]]
     if advices:
         xlsx = Path(out["run_dir"]) / "summary.xlsx"
@@ -109,7 +109,7 @@ def _ledger(args: argparse.Namespace) -> int:
         if not args.status:
             print("--set 需要配合 --status", file=sys.stderr)
             return 2
-        n = ledger.set_status(args.set, args.status)
+        n = ledger.set_status(args.set, args.status, args.jd_hash)
         print(f"已更新 {n} 条：{args.set} → {args.status}")
         return 0
     entries = ledger.list_entries(args.status)
@@ -117,9 +117,10 @@ def _ledger(args: argparse.Namespace) -> int:
         print("（无台账记录）")
         return 0
     for e in entries:
+        updated = e.get("status_changed_at") or e.get("last_seen")
         print(
             f"{e['position']}  分数={e['score']}  {e['verdict']}  "
-            f"地点={e['location_verdict']}  {e['status']}  更新={e['last_seen']}"
+            f"地点={e['location_verdict']}  {e['status']}  hash={e.get('jd_hash', '')}  更新={updated}"
         )
     return 0
 
@@ -159,6 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_ledger.add_argument("--set", metavar="position", help="按岗位名改状态（配合 --status）")
     p_ledger.add_argument("--stats", action="store_true", help="各状态计数")
     p_ledger.add_argument("--status", choices=list(ledger.STATUSES), help="状态筛选 / 设置")
+    p_ledger.add_argument("--jd-hash", help="按 jd_hash 指定唯一条目（配合 --set，避免同名串改）")
     p_ledger.set_defaults(func=_ledger)
     return parser
 

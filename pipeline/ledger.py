@@ -52,20 +52,26 @@ def list_entries(status: str | None = None) -> list[dict]:
     return entries
 
 
-def set_status(position: str, status: str) -> int:
-    """按 position 改状态，返回匹配条数。"""
+def set_status(position: str, status: str, jd_hash: str | None = None) -> int:
+    """改状态。jd_hash 指定唯一条目；否则按 position 匹配，多条时报错要求指定。"""
     if status not in STATUSES:
         raise ValueError(f"status 只允许 {STATUSES}")
     entries = _read()
-    n = 0
-    for e in entries:
-        if e.get("position") == position:
-            e["status"] = status
-            n += 1
-    if n == 0:
-        raise ValueError(f"未找到 position={position} 的台账条目")
+    if jd_hash:
+        matched = [e for e in entries if e.get("jd_hash") == jd_hash]
+        label = f"jd_hash={jd_hash}"
+    else:
+        matched = [e for e in entries if e.get("position") == position]
+        label = f"position={position}"
+    if not matched:
+        raise ValueError(f"未找到 {label} 的台账条目")
+    if len(matched) > 1:
+        hashes = "、".join(e.get("jd_hash", "") for e in matched)
+        raise ValueError(f"匹配到 {len(matched)} 条同名岗位，请用 --jd-hash 指定其一：{hashes}")
+    matched[0]["status"] = status
+    matched[0]["status_changed_at"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     _write(entries)
-    return n
+    return 1
 
 
 def stats() -> dict:

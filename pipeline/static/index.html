@@ -75,7 +75,7 @@ async function loadStatus() {
     const r = await fetch("/api/status");
     const s = await r.json();
     document.getElementById("status").textContent =
-      "简历：" + (s.resume_name || "未选择") + " ｜ JD 文件：" + s.jd_count + " 个 ｜ 上次运行：" + (s.last_run || "无");
+      "简历：" + (s.resume_name || "未选择") + " ｜ 上次运行：" + (s.last_run || "无");
   } catch (e) {}
 }
 
@@ -83,7 +83,7 @@ async function login() {
   const fd = new FormData();
   fd.append("password", document.getElementById("pw").value);
   const r = await fetch("/api/login", { method: "POST", body: fd });
-  if (r.ok) showApp();
+  if (r.ok) { showApp(); loadStatus(); }
   else alert("口令错误");
 }
 function showApp() { document.getElementById("login").hidden = true; document.getElementById("app").hidden = false; }
@@ -116,7 +116,7 @@ async function poll() {
       "第 " + s.step + "/4 步：" + (STEP_NAMES[s.step] || "") + "（" + s.elapsed + "s）";
     if (s.status === "done") { await showResult(); break; }
     if (s.status === "error") { document.getElementById("progress").textContent = "出错：" + s.error; break; }
-    await new Promise(res => setTimeout(res, 2000));
+    await new Promise(res => setTimeout(res, 800));
   }
 }
 
