@@ -55,13 +55,18 @@ def _resolve(text_or_path: str) -> str:
     return text_or_path
 
 
-def run_batch(resume_text: str, jobs: list[dict], *, run_dir=None) -> dict:
+def run_batch(resume_text: str, jobs: list[dict], *, run_dir=None, jobs_path=None) -> dict:
     """循环跑所有岗位；单个失败记录到结果并逐条落盘，不中断整体。"""
     if run_dir is None:
         ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         run_dir = steps.DATA_DIR / "runs" / ts
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
+
+    if jobs_path:
+        (run_dir / "meta.json").write_text(
+            json.dumps({"jobs_path": str(jobs_path)}, ensure_ascii=False), encoding="utf-8"
+        )
 
     results_file = run_dir / "results.jsonl"
     results_file.write_text("", encoding="utf-8")  # 清空旧文件
@@ -91,3 +96,30 @@ def run_batch(resume_text: str, jobs: list[dict], *, run_dir=None) -> dict:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     return {"run_dir": str(run_dir), "results": results}
+
+
+def latest_results_file() -> Path | None:
+    """最近一次 batch 的 results.jsonl。"""
+    candidates = sorted((steps.DATA_DIR / "runs").glob("*/results.jsonl"))
+    return candidates[-1] if candidates else None
+
+
+def failed_indexes(results_file: Path) -> list[int]:
+    idx = []
+    for line in Path(results_file).read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        if not rec.get("ok"):
+            idx.append(rec["index"])
+    return idx
+
+
+def read_jobs_path(run_dir) -> str | None:
+    meta = Path(run_dir) / "meta.json"
+    if meta.exists():
+        try:
+            return json.loads(meta.read_text(encoding="utf-8")).get("jobs_path")
+        except (json.JSONDecodeError, OSError):
+            return None
+    return None

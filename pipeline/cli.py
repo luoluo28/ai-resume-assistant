@@ -34,8 +34,30 @@ def _run(args: argparse.Namespace) -> int:
 
 def _batch(args: argparse.Namespace) -> int:
     resume_text = ingest.ingest(args.resume)
-    jobs = batch.load_jobs(args.jobs)
-    out = batch.run_batch(resume_text, jobs)
+    jobs_path = args.jobs
+    if args.retry_failed:
+        rf = batch.latest_results_file()
+        if rf is None:
+            print("没有可重跑的失败记录", file=sys.stderr)
+            return 1
+        failed = batch.failed_indexes(rf)
+        if not failed:
+            print("上次没有失败的岗位")
+            return 0
+        if not jobs_path:
+            jobs_path = batch.read_jobs_path(rf.parent)
+        if not jobs_path:
+            print("无法定位上次的 jobs 文件，请用 --jobs 指定", file=sys.stderr)
+            return 1
+        all_jobs = batch.load_jobs(jobs_path)
+        jobs = [all_jobs[i] for i in failed if i < len(all_jobs)]
+        print(f"本次只重跑 {len(jobs)} 条（上次 {len(all_jobs)} 个岗位中失败 {len(failed)} 条），预计最多 {len(jobs) * 4} 次调用")
+    else:
+        if not jobs_path:
+            print("需要 --jobs 指定岗位文件", file=sys.stderr)
+            return 2
+        jobs = batch.load_jobs(jobs_path)
+    out = batch.run_batch(resume_text, jobs, jobs_path=jobs_path)
     results = out["results"]
     ok = sum(1 for r in results if r["ok"])
     print(f"完成 {ok}/{len(results)} 个岗位")
@@ -110,8 +132,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.set_defaults(func=_run)
 
     p_batch = sub.add_parser("batch", help="批量跑多个岗位（一份简历对多个 JD）")
-    p_batch.add_argument("--jobs", required=True, help="jobs.jsonl 路径（每行一个岗位 JSON）")
+    p_batch.add_argument("--jobs", required=False, help="jobs.jsonl 路径（每行一个岗位 JSON；--retry-failed 时可省略）")
     p_batch.add_argument("--resume", required=True, help="简历文件（PDF / 图片 / txt）")
+    p_batch.add_argument("--retry-failed", action="store_true", help="只重跑上次失败的岗位")
     p_batch.set_defaults(func=_batch)
 
     p_export = sub.add_parser("export", help="把结果导出 Excel/PDF")
