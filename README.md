@@ -15,17 +15,24 @@ AI-powered resume analyzer for job applications
 ## 目录
 
 - `prompts/`：四个步骤的 prompt（从 Dify 版语义一致迁移）
-- `pipeline/`：ingest / llm / steps / schema / cli / export（按切片逐步补充）
+- `pipeline/`：ingest / llm / schema / steps / scoring / export / feishu / batch / collect / cli
 - `data/`：岗位输入 `jobs.jsonl` 与运行产物 `runs/`
 - `AI简历助手.yml`：Dify 版 DSL（已冻结，仅作输出对照基线，不再修改）
 
 ## 使用
 
 ```bash
-# 单次
-python -m pipeline.cli run --resume <path> --jd <path> --company <path>
-# 批量
-python -m pipeline.cli batch --jobs data/jobs.jsonl
+# 单次（--title 可选，不给则从 JD 首行机械提取岗位名）
+python -m pipeline.cli run --resume <path> --jd <path> [--company <path>] [--title <岗位名>]
+
+# 批量（jobs.jsonl 每行一个岗位：{"title":"岗位名","jd":"file:路径 或 纯文本","company":"..."}）
+python -m pipeline.cli batch --resume <path> --jobs data/jobs.jsonl
+
+# 导出
+python -m pipeline.cli export --advice data/runs/<ts>/04_apply_advice.json --xlsx out.xlsx [--pdf out.pdf]
+
+# 飞书写入（凭据走 .env）
+python -m pipeline.cli feishu --advice data/runs/<ts>/04_apply_advice.json --app-token <t> --table-id <t>
 ```
 
 ## 模型与密钥
@@ -38,5 +45,5 @@ python -m pipeline.cli batch --jobs data/jobs.jsonl
 - Python 3.10+
 - DeepSeek API
 - pdfplumber / rapidocr-onnxruntime（输入归一化）
-- openpyxl / pandas（导出）
+- openpyxl（导出）
 - Playwright（官网 careers 采集，仅公开页面）

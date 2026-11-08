@@ -1,6 +1,6 @@
 # apply_advice — 投递建议（五段人话 + JSON）
 
-输入占位符：`{{PROFILE_JSON}}`、`{{JD_ANALYSIS_JSON}}`、`{{COMPANY_VALUES_JSON}}`
+输入占位符：`{{PROFILE_JSON}}`、`{{JD_ANALYSIS_JSON}}`、`{{COMPANY_VALUES_JSON}}`、`{{POSITION}}`
 
 ---
 
@@ -20,6 +20,10 @@
 
 ## 输入
 
+岗位名（这份 JD 对应的岗位）：
+
+{{POSITION}}
+
 候选人画像：
 
 {{PROFILE_JSON}}
@@ -34,6 +38,7 @@
 
 ## 规则
 
+- `position` 必须原样照抄「岗位名」的 `{{POSITION}}`，禁止自行推断或改写。
 - 结论三选一：建议投 / 不建议投 / 先补再投。
 - 每条理由必须同时引用 JD 原词与简历原句。
 - 差距必须可对应到具体补救动作。

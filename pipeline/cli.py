@@ -1,8 +1,10 @@
 """CLI 入口。
 
 用法:
-    python -m pipeline.cli run --resume <简历> --jd <JD> [--company <公司文本>]
+    python -m pipeline.cli run --resume <简历> --jd <JD> [--company <公司>] [--title <岗位名>]
     python -m pipeline.cli batch --resume <简历> --jobs <jobs.jsonl>
+    python -m pipeline.cli export --advice <04_apply_advice.json> [--xlsx out.xlsx] [--pdf out.pdf]
+    python -m pipeline.cli feishu --advice <04_apply_advice.json> --app-token <t> --table-id <t>
 
 密钥从本地 .env / 环境变量读取（见 llm.py），无需改代码。
 """
@@ -13,19 +15,19 @@ import json
 import sys
 from pathlib import Path
 
-from . import batch, export, ingest, steps
+from . import batch, export, feishu, ingest, steps
 
 
 def _run(args: argparse.Namespace) -> int:
     resume_text = ingest.ingest(args.resume)
     jd_text = ingest.ingest(args.jd)
     company_text = ingest.ingest(args.company) if args.company else ""
-    result = steps.run_pipeline(resume_text, jd_text, company_text)
+    result = steps.run_pipeline(resume_text, jd_text, company_text, position=args.title)
     print(steps.render_advice(result["advice"]))
     print("\n--- 结构化 JSON ---")
     print(json.dumps(result["advice"], ensure_ascii=False, indent=2))
-    print("\n--- 评分 / 覆盖率 ---")
-    print(json.dumps(result["scoring"], ensure_ascii=False, indent=2))
+    print("\n--- 关键词覆盖率 ---")
+    print(json.dumps(result["coverage"], ensure_ascii=False, indent=2))
     print("\n中间产物目录:", result["run_dir"])
     return 0
 
@@ -42,13 +44,33 @@ def _batch(args: argparse.Namespace) -> int:
             a = r["advice"]
             print(f"  [OK] {a.get('position', '')} 结论={a.get('conclusion', '')} 分数={a.get('score', '')}")
         else:
-            print(f"  [失败] step={r.get('step', '')} {r.get('error', '')}")
+            print(f"  [失败] step={r.get('step', '')} type={r.get('error_type', '')} {r.get('error', '')}")
     advices = [r["advice"] for r in results if r["ok"]]
     if advices:
         xlsx = Path(out["run_dir"]) / "summary.xlsx"
         export.to_excel(advices, xlsx)
         print("汇总表:", xlsx)
     print("results.jsonl:", Path(out["run_dir"]) / "results.jsonl")
+    return 0
+
+
+def _export(args: argparse.Namespace) -> int:
+    advice = json.loads(Path(args.advice).read_text(encoding="utf-8"))
+    if args.xlsx:
+        export.to_excel([advice], args.xlsx)
+    if args.pdf:
+        export.to_pdf(advice, args.pdf)
+    if not args.xlsx and not args.pdf:
+        print("请至少指定 --xlsx 或 --pdf", file=sys.stderr)
+        return 2
+    print("已导出:", args.xlsx or "", args.pdf or "")
+    return 0
+
+
+def _feishu(args: argparse.Namespace) -> int:
+    advice = json.loads(Path(args.advice).read_text(encoding="utf-8"))
+    feishu.to_feishu([advice], args.app_token, args.table_id)
+    print("已写入飞书多维表格")
     return 0
 
 
@@ -60,12 +82,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--resume", required=True, help="简历文件（PDF / 图片 / txt）")
     p_run.add_argument("--jd", required=True, help="岗位描述（JD）文件")
     p_run.add_argument("--company", required=False, help="公司官网 about/价值观页文本（可选）")
+    p_run.add_argument("--title", required=False, help="岗位名（可选；不给则从 JD 首行机械提取）")
     p_run.set_defaults(func=_run)
 
     p_batch = sub.add_parser("batch", help="批量跑多个岗位（一份简历对多个 JD）")
     p_batch.add_argument("--jobs", required=True, help="jobs.jsonl 路径（每行一个岗位 JSON）")
     p_batch.add_argument("--resume", required=True, help="简历文件（PDF / 图片 / txt）")
     p_batch.set_defaults(func=_batch)
+
+    p_export = sub.add_parser("export", help="把结果导出 Excel/PDF")
+    p_export.add_argument("--advice", required=True, help="04_apply_advice.json 路径")
+    p_export.add_argument("--xlsx", help="输出 xlsx 路径")
+    p_export.add_argument("--pdf", help="输出 pdf 路径")
+    p_export.set_defaults(func=_export)
+
+    p_feishu = sub.add_parser("feishu", help="写入飞书多维表格")
+    p_feishu.add_argument("--advice", required=True, help="04_apply_advice.json 路径")
+    p_feishu.add_argument("--app-token", required=True, help="多维表格 app_token")
+    p_feishu.add_argument("--table-id", required=True, help="数据表 table_id")
+    p_feishu.set_defaults(func=_feishu)
     return parser
 
 

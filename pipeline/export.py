@@ -5,6 +5,7 @@ PDF 中文不走 reportlab 直写，而是渲染成 HTML 后由无头 Chromium �
 """
 from __future__ import annotations
 
+import html
 import json
 import sys
 from pathlib import Path
@@ -46,10 +47,11 @@ def to_pdf(advice: dict, path: str | Path) -> None:
 
 
 def advice_html(advice: dict) -> str:
+    esc = lambda x: html.escape(str(x), quote=False)
     score = advice.get("score", "")
-    score_s = f"（匹配度 {score}%）" if score not in (None, "", 0) else ""
-    reasons = "".join(f"<li>{r}</li>" for r in advice.get("reasons", []))
-    gaps = "".join(f"<li>{g}</li>" for g in advice.get("gaps", []))
+    score_s = f"（匹配度 {esc(score)}%）" if score not in (None, "", 0) else ""
+    reasons = "".join(f"<li>{esc(r)}</li>" for r in advice.get("reasons", []))
+    gaps = "".join(f"<li>{esc(g)}</li>" for g in advice.get("gaps", []))
     return f"""<!doctype html>
 <html><head><meta charset="utf-8">
 <style>
@@ -60,12 +62,12 @@ def advice_html(advice: dict) -> str:
   ul, ol {{ margin: 6px 0; }}
 </style></head>
 <body>
-<h1>投递建议：{advice.get('position', '')}</h1>
-<div class="meta">结论：{advice.get('conclusion', '')}{score_s}</div>
+<h1>投递建议：{esc(advice.get('position', ''))}</h1>
+<div class="meta">结论：{esc(advice.get('conclusion', ''))}{score_s}</div>
 <h2>理由</h2><ol>{reasons}</ol>
 <h2>差什么</h2><ul>{gaps}</ul>
-<h2>怎么补</h2><p>{advice.get('advice', '')}</p>
-<h2>打招呼第一句</h2><p>{advice.get('opening_line', '')}</p>
+<h2>怎么补</h2><p>{esc(advice.get('advice', ''))}</p>
+<h2>打招呼第一句</h2><p>{esc(advice.get('opening_line', ''))}</p>
 </body></html>"""
 
 

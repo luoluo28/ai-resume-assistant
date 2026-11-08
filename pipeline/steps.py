@@ -5,7 +5,9 @@ data/runs/<timestamp>/。任一步失败抛 StepError（带步骤名），不静
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -46,6 +48,25 @@ def _ensure_no_error(result: dict, step: str) -> dict:
     return result
 
 
+_FORBIDDEN_POS_WORDS = ("岗位职责", "任职要求", "工作内容", "任职资格", "岗位描述")
+_POS_LEADING_RE = re.compile(r"^[【\[（(][^】\]）)]*[】\]）)]\s*|^(?:岗位|职位)\s*[:：]\s*")
+
+
+def _position_from_jd(jd_text: str) -> str | None:
+    """从 JD 原文机械提取岗位名：首个非空行、剥前缀、≤30 字、不含禁用词。"""
+    for line in (jd_text or "").splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        s = _POS_LEADING_RE.sub("", s).strip()
+        if not s:
+            continue
+        if len(s) > 30 or any(w in s for w in _FORBIDDEN_POS_WORDS):
+            return None
+        return s
+    return None
+
+
 def profile_extract(resume_text: str) -> dict:
     system = _fill(_load_prompt("01_profile_extract.md"), RESUME_TEXT=resume_text)
     data = llm.chat_json(system=system, user="", temperature=0.1)
@@ -55,15 +76,25 @@ def profile_extract(resume_text: str) -> dict:
 
 
 def jd_analysis(jd_text: str, profile: dict) -> dict:
+    cache_key = hashlib.sha256(
+        (jd_text + "\x00" + json.dumps(profile, ensure_ascii=False, sort_keys=True)).encode("utf-8")
+    ).hexdigest()[:16]
+    cache_file = DATA_DIR / "cache" / "jd" / f"{cache_key}.json"
+    if cache_file.exists():
+        return json.loads(cache_file.read_text(encoding="utf-8"))
+
     system = _fill(
         _load_prompt("02_jd_analysis.md"),
         JD_TEXT=jd_text,
         PROFILE_JSON=json.dumps(profile, ensure_ascii=False),
     )
-    data = llm.chat_json(system=system, user="", temperature=0.1)
+    data = llm.chat_json(system=system, user="", temperature=0)
     if "error" in data:
         return data
-    return schema.JdAnalysis.from_dict(data).to_dict()
+    result = schema.JdAnalysis.from_dict(data).to_dict()
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+    return result
 
 
 def company_values(company_text: str, jd_text: str) -> dict:
@@ -75,20 +106,28 @@ def company_values(company_text: str, jd_text: str) -> dict:
     data = llm.chat_json(system=system, user="", temperature=0.1)
     if "error" in data:
         return data
-    return schema.CompanyValues.from_dict(data).to_dict()
+    result = schema.CompanyValues.from_dict(data).to_dict()
+    if len(result.get("labels", [])) > 5:
+        print(f"[告警] company_values 返回 {len(result['labels'])} 个标签，已截断为 5", file=sys.stderr)
+        result["labels"] = result["labels"][:5]
+    return result
 
 
-def apply_advice(profile: dict, jd: dict, values: dict) -> dict:
+def apply_advice(profile: dict, jd: dict, values: dict, *, position: str = "") -> dict:
     system = _fill(
         _load_prompt("04_apply_advice.md"),
         PROFILE_JSON=json.dumps(profile, ensure_ascii=False),
         JD_ANALYSIS_JSON=json.dumps(jd, ensure_ascii=False),
         COMPANY_VALUES_JSON=json.dumps(values, ensure_ascii=False),
+        POSITION=position,
     )
     data = llm.chat_json(system=system, user="", temperature=0.1)
     if "error" in data:
         return data
-    return schema.ApplyAdvice.from_dict(data).to_dict()
+    result = schema.ApplyAdvice.from_dict(data).to_dict()
+    if position:
+        result["position"] = position  # 输入侧元数据覆盖，防止模型改写
+    return result
 
 
 def render_advice(advice: dict) -> str:
@@ -107,7 +146,7 @@ def render_advice(advice: dict) -> str:
 
 
 def _new_run_dir() -> Path:
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     d = DATA_DIR / "runs" / ts
     d.mkdir(parents=True, exist_ok=True)
     return d
@@ -119,10 +158,12 @@ def _dump(run_dir: Path, name: str, obj: dict) -> None:
     )
 
 
-def run_pipeline(resume_text: str, jd_text: str, company_text: str = "", *, run_dir=None) -> dict:
+def run_pipeline(resume_text: str, jd_text: str, company_text: str = "", *, run_dir=None, position=None) -> dict:
     """串联四步；每步落中间文件；任一步失败抛 StepError（不静默跳过）。"""
     run_dir = Path(run_dir) if run_dir else _new_run_dir()
     run_dir.mkdir(parents=True, exist_ok=True)
+
+    position = position or _position_from_jd(jd_text) or "未提供岗位名"
 
     profile = profile_extract(resume_text)
     _dump(run_dir, "01_profile.json", profile)
@@ -136,14 +177,17 @@ def run_pipeline(resume_text: str, jd_text: str, company_text: str = "", *, run_
     _dump(run_dir, "03_company_values.json", values)
     _ensure_no_error(values, "company_values")
 
-    advice = apply_advice(profile, jd, values)
+    advice = apply_advice(profile, jd, values, position=position)
     _dump(run_dir, "04_apply_advice.json", advice)
     _ensure_no_error(advice, "apply_advice")
 
-    sc = scoring.compute(profile, jd, values)
-    _dump(run_dir, "05_scoring.json", sc)
+    if position == "未提供岗位名":
+        advice["note"] = (advice.get("note", "") + " 岗位名未提供，按占位处理。").strip()
 
-    return {"run_dir": str(run_dir), "advice": advice, "scoring": sc}
+    cov = scoring.keyword_coverage_report(profile, jd)
+    _dump(run_dir, "05_coverage.json", cov)
+
+    return {"run_dir": str(run_dir), "advice": advice, "coverage": cov}
 
 
 if __name__ == "__main__":
