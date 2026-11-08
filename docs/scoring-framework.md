@@ -1,7 +1,8 @@
-# 五维评分框架（方案 B 设计稿，未启用）
+# 五维评分框架（已启用）
 
 > 借鉴 ai-job-search 的 `.claude/skills/job-application-assistant/04-job-evaluation.md`（MIT），
-> 已做国内适配。⚠ 与当前方案 A（对外只保留 `advice.score`）不并存，启用前需拍板。
+> 已做国内适配并启用：对外唯一 `score` = 五维加权总分（technical 30 / experience 25 / behavioral 15 / career 30），
+> `location_verdict=FAIL` 一票否决；`advice.score` 不再由 LLM 自评，改由 `scoring.weighted_score()` 计算。
 
 ## 硬门（评分前先过，FAIL 即否决）
 

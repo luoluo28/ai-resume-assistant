@@ -110,11 +110,14 @@ class CompanyValues:
 
 @dataclass
 class ApplyAdvice:
-    """第四步 apply_advice 的输出：投递建议。"""
+    """第四步 apply_advice 的输出：投递建议。score/verdict 由代码按五维加权算出。"""
 
     position: str = ""
     conclusion: str = ""
     score: int = 0
+    verdict: str = ""
+    scores: dict = field(default_factory=dict)  # technical/experience/behavioral/career
+    location_verdict: str = ""  # PASS/FLAG/FAIL
     reasons: list = field(default_factory=list)
     gaps: list = field(default_factory=list)
     advice: str = ""
@@ -127,7 +130,8 @@ class ApplyAdvice:
         return cls(
             position=_str(d.get("position")),
             conclusion=_str(d.get("conclusion")),
-            score=_int(d.get("score")),
+            scores=_dict(d.get("scores")),
+            location_verdict=_str(d.get("location_verdict")),
             reasons=[_str(x) for x in _list(d.get("reasons"))],
             gaps=[_str(x) for x in _list(d.get("gaps"))],
             advice=_str(d.get("advice")),

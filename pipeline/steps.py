@@ -125,6 +125,11 @@ def apply_advice(profile: dict, jd: dict, values: dict, *, position: str = "") -
     if "error" in data:
         return data
     result = schema.ApplyAdvice.from_dict(data).to_dict()
+    result["score"] = scoring.weighted_score(result["scores"])
+    result["verdict"] = scoring.verdict_band(result["score"])
+    if result.get("location_verdict") == "FAIL":
+        result["conclusion"] = "不建议投"
+        result["note"] = (result.get("note", "") + " 地点/通勤不满足，一票否决。").strip()
     if position:
         result["position"] = position  # 输入侧元数据覆盖，防止模型改写
     return result
@@ -132,9 +137,15 @@ def apply_advice(profile: dict, jd: dict, values: dict, *, position: str = "") -
 
 def render_advice(advice: dict) -> str:
     """把 apply_advice 的 JSON 渲染成五段人话。"""
-    score = advice.get("score")
-    score_part = f"（匹配度 {score}%）" if score not in (None, "", 0) else ""
-    lines = [f"1. 结论：{advice.get('conclusion', '')}{score_part}", "2. 理由："]
+    head = advice.get("conclusion", "")
+    parts = []
+    if advice.get("verdict"):
+        parts.append(str(advice["verdict"]))
+    if advice.get("score"):
+        parts.append(f"匹配度 {advice['score']}%")
+    if parts:
+        head += "（" + " · ".join(parts) + "）"
+    lines = [f"1. 结论：{head}", "2. 理由："]
     for i, r in enumerate(advice.get("reasons", []), 1):
         lines.append(f"   {i}. {r}")
     lines.append("3. 差什么：")

@@ -32,4 +32,4 @@
 
 见 [`docs/scoring-framework.md`](scoring-framework.md)。
 
-⚠ 与当前方案 A（对外只保留 `advice.score` 一个分数）**不并存**（决策记录 R2 的教训：同一结果里两个 score 字段必误读）。启用前需单独拍板 + 设计。
+✅ 已启用：对外唯一 `score` = 五维加权总分，`location_verdict=FAIL` 一票否（不再是 LLM 自评单数）。

@@ -51,3 +51,24 @@ def keyword_coverage_report(profile: dict, jd: dict) -> dict:
         "missing": missing,
         "coverage": coverage,
     }
+
+
+WEIGHTS = {"technical": 0.30, "experience": 0.25, "behavioral": 0.15, "career": 0.30}
+
+
+def weighted_score(scores: dict) -> int:
+    """五维加权总分（technical 30 / experience 25 / behavioral 15 / career 30）。"""
+    total = sum(float(scores.get(k, 0) or 0) * w for k, w in WEIGHTS.items())
+    return int(round(total))
+
+
+def verdict_band(score: int) -> str:
+    if score >= 75:
+        return "Strong Fit"
+    if score >= 60:
+        return "Good Fit"
+    if score >= 45:
+        return "Moderate Fit"
+    if score >= 30:
+        return "Weak Fit"
+    return "Poor Fit"
