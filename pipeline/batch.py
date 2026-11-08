@@ -41,11 +41,11 @@ def _field(raw: str, name: str, lineno: int) -> str:
 
 def _looks_like_path(s: str) -> bool:
     s = s.strip()
-    if len(s) <= 20 or "\n" in s:
+    if not s or "\n" in s:
         return False
     if s.lower().endswith(_PATH_EXT):
-        return True
-    return ("\\" in s or "/" in s) and " " not in s
+        return True  # 以已知扩展名结尾：强信号，不看长度
+    return ("\\" in s or "/" in s) and " " not in s and len(s) > 20
 
 
 def _resolve(text_or_path: str) -> str:
