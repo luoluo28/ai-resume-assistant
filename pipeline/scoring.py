@@ -1,9 +1,11 @@
-"""关键词覆盖率（确定性计算，非 LLM）。
+"""关键词覆盖率 + 五维加权评分（确定性计算）。
 
-仅借鉴 Jobscan（闭源）公开的「关键词按频次加权、计算覆盖比」通用思路，
-不逆向、不爬取、不复制其文案。
-
-注：多维度评分已按方案 A 移除；对外只保留 LLM 自评的 `advice.score` 一个分数。
+- keyword_coverage_report：JD 关键词在简历中的覆盖率。
+  仅借鉴 Jobscan（闭源）公开的「关键词按频次加权、计算覆盖比」通用思路，
+  不逆向、不爬取、不复制其文案。
+- weighted_score / verdict_band：把 LLM 打出的四维分（technical/experience/behavioral/career）
+  按 30/25/15/30 加权成总分，并映射结论带；结构参考 career-ops
+  （MIT License，© Santiago Fernández de Valderrama Aparicio）。
 """
 from __future__ import annotations
 
@@ -62,6 +64,9 @@ def weighted_score(scores: dict) -> int:
     unknown = [k for k in scores if k not in WEIGHTS]
     if unknown:
         print(f"[warn] 未参与加权的维度被忽略: {', '.join(unknown)}", file=sys.stderr)
+    missing = [k for k in WEIGHTS if k not in scores or scores[k] in (None, "")]
+    if missing:
+        raise ValueError(f"评分缺少维度: {missing}（不得默认 0 分，会导致总分系统性偏低）")
     total = sum(float(scores.get(k, 0) or 0) * w for k, w in WEIGHTS.items())
     return int(round(total))
 
