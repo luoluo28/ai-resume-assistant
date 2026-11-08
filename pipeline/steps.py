@@ -67,21 +67,41 @@ def _position_from_jd(jd_text: str) -> str | None:
     return None
 
 
+def _cache_get(key: str, subdir: str) -> dict | None:
+    f = DATA_DIR / "cache" / subdir / f"{key}.json"
+    if f.exists():
+        print(f"[cache] 命中 {subdir} {key[:8]}", file=sys.stderr)
+        return json.loads(f.read_text(encoding="utf-8"))
+    return None
+
+
+def _cache_put(key: str, subdir: str, obj: dict) -> None:
+    f = DATA_DIR / "cache" / subdir / f"{key}.json"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
+
+
 def profile_extract(resume_text: str) -> dict:
+    key = hashlib.sha256(resume_text.encode("utf-8")).hexdigest()[:16]
+    cached = _cache_get(key, "profile")
+    if cached is not None:
+        return cached
     system = _fill(_load_prompt("01_profile_extract.md"), RESUME_TEXT=resume_text)
     data = llm.chat_json(system=system, user="", temperature=0.1)
     if "error" in data:
         return data
-    return schema.Profile.from_dict(data).to_dict()
+    result = schema.Profile.from_dict(data).to_dict()
+    _cache_put(key, "profile", result)
+    return result
 
 
 def jd_analysis(jd_text: str, profile: dict) -> dict:
-    cache_key = hashlib.sha256(
+    key = hashlib.sha256(
         (jd_text + "\x00" + json.dumps(profile, ensure_ascii=False, sort_keys=True)).encode("utf-8")
     ).hexdigest()[:16]
-    cache_file = DATA_DIR / "cache" / "jd" / f"{cache_key}.json"
-    if cache_file.exists():
-        return json.loads(cache_file.read_text(encoding="utf-8"))
+    cached = _cache_get(key, "jd")
+    if cached is not None:
+        return cached
 
     system = _fill(
         _load_prompt("02_jd_analysis.md"),
@@ -92,8 +112,7 @@ def jd_analysis(jd_text: str, profile: dict) -> dict:
     if "error" in data:
         return data
     result = schema.JdAnalysis.from_dict(data).to_dict()
-    cache_file.parent.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+    _cache_put(key, "jd", result)
     return result
 
 
