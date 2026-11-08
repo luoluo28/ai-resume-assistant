@@ -57,6 +57,10 @@ def _batch(args: argparse.Namespace) -> int:
             print("需要 --jobs 指定岗位文件", file=sys.stderr)
             return 2
         jobs = batch.load_jobs(jobs_path)
+    if args.max_jobs and args.max_jobs > 0 and len(jobs) > args.max_jobs:
+        total = len(jobs)
+        jobs = jobs[: args.max_jobs]
+        print(f"[limit] 本次只跑前 {args.max_jobs}/{total} 条（--max-jobs {args.max_jobs}），其余未处理", file=sys.stderr)
     out = batch.run_batch(resume_text, jobs, jobs_path=jobs_path)
     results = out["results"]
     ok = sum(1 for r in results if r["ok"])
@@ -135,6 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_batch.add_argument("--jobs", required=False, help="jobs.jsonl 路径（每行一个岗位 JSON；--retry-failed 时可省略）")
     p_batch.add_argument("--resume", required=True, help="简历文件（PDF / 图片 / txt）")
     p_batch.add_argument("--retry-failed", action="store_true", help="只重跑上次失败的岗位")
+    p_batch.add_argument("--max-jobs", type=int, default=0, help="最多跑 N 条（0=不限）")
     p_batch.set_defaults(func=_batch)
 
     p_export = sub.add_parser("export", help="把结果导出 Excel/PDF")

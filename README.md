@@ -27,6 +27,7 @@ python -m pipeline.cli run --resume <path> --jd <path> [--company <path>] [--tit
 
 # 批量（jobs.jsonl 每行：{"title":"岗位名","jd":"file:路径 或 纯文本","company":"..."}）
 # ⚠️ jd/company 是文件路径时必须加 file: 前缀，否则会被当成纯文本分析
+# 可选：--max-jobs N 只跑前 N 条（控成本）；--retry-failed 只重跑上次失败的
 python -m pipeline.cli batch --resume <path> --jobs data/jobs.jsonl
 
 # 导出
