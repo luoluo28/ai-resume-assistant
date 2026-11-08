@@ -60,7 +60,7 @@ def _read_upload(f: UploadFile | None) -> str:
         Path(tmp).unlink(missing_ok=True)
 
 
-def _require_auth(token: str | None = Cookie(default=None)) -> None:
+def _require_auth(token: str | None = Cookie(default=None, alias="pipeline_token")) -> None:
     if _PASSWORD and token not in _SESSIONS:
         raise HTTPException(status_code=401, detail="需要口令")
 
@@ -84,7 +84,7 @@ def analyze(
     jd_file: UploadFile | None = File(None),
     company_text: str = Form(""),
     position: str = Form(""),
-    token: str | None = Cookie(default=None),
+    token: str | None = Cookie(default=None, alias="pipeline_token"),
 ):
     _require_auth(token)
     if resume_file is not None and resume_file.filename:
@@ -119,7 +119,7 @@ def _run_task(task_id: str, resume: str, jd: str, company: str, position: str) -
 
 
 @app.get("/api/task/{task_id}")
-def task_status(task_id: str, token: str | None = Cookie(default=None)):
+def task_status(task_id: str, token: str | None = Cookie(default=None, alias="pipeline_token")):
     _require_auth(token)
     t = _tasks.get(task_id)
     if t is None:
@@ -128,7 +128,7 @@ def task_status(task_id: str, token: str | None = Cookie(default=None)):
 
 
 @app.get("/api/task/{task_id}/result")
-def task_result(task_id: str, token: str | None = Cookie(default=None)):
+def task_result(task_id: str, token: str | None = Cookie(default=None, alias="pipeline_token")):
     _require_auth(token)
     t = _tasks.get(task_id)
     if t is None or t["status"] != "done":
@@ -137,7 +137,7 @@ def task_result(task_id: str, token: str | None = Cookie(default=None)):
 
 
 @app.post("/api/task/{task_id}/export")
-def task_export(task_id: str, format: str = "xlsx", token: str | None = Cookie(default=None)):
+def task_export(task_id: str, format: str = "xlsx", token: str | None = Cookie(default=None, alias="pipeline_token")):
     _require_auth(token)
     t = _tasks.get(task_id)
     if t is None or t["status"] != "done":
@@ -160,7 +160,7 @@ def task_export(task_id: str, format: str = "xlsx", token: str | None = Cookie(d
 
 
 @app.get("/api/status")
-def status(token: str | None = Cookie(default=None)):
+def status(token: str | None = Cookie(default=None, alias="pipeline_token")):
     _require_auth(token)
     return {
         "resume_name": _state["resume_name"],
