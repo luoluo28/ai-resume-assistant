@@ -117,6 +117,16 @@ def jd_analysis(jd_text: str, profile: dict) -> dict:
 
 
 def company_values(company_text: str, jd_text: str) -> dict:
+    """第 3 步。公司文本为空时直接返回占位结果，不调用模型（省一次调用）。"""
+    if not (company_text or "").strip():
+        print("[skip] 未提供公司文本，第 3 步不调用模型", file=sys.stderr)
+        return {"need_company_info": True, "labels": [], "hire_profile": ""}
+
+    key = hashlib.sha256((company_text + "\x00" + jd_text + "\x00v1").encode("utf-8")).hexdigest()[:16]
+    cached = _cache_get(key, "company")
+    if cached is not None:
+        return cached
+
     system = _fill(
         _load_prompt("03_company_values.md"),
         COMPANY_TEXT=company_text,
@@ -129,10 +139,22 @@ def company_values(company_text: str, jd_text: str) -> dict:
     if len(result.get("labels", [])) > 5:
         print(f"[告警] company_values 返回 {len(result['labels'])} 个标签，已截断为 5", file=sys.stderr)
         result["labels"] = result["labels"][:5]
+    _cache_put(key, "company", result)
     return result
 
 
 def apply_advice(profile: dict, jd: dict, values: dict, *, position: str = "") -> dict:
+    key = hashlib.sha256(
+        json.dumps(
+            {"p": profile, "j": jd, "v": values, "pos": position, "v2": "advice-v1"},
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()[:16]
+    cached = _cache_get(key, "advice")
+    if cached is not None:
+        return cached
+
     system = _fill(
         _load_prompt("04_apply_advice.md"),
         PROFILE_JSON=json.dumps(profile, ensure_ascii=False),
@@ -151,6 +173,7 @@ def apply_advice(profile: dict, jd: dict, values: dict, *, position: str = "") -
         result["note"] = (result.get("note", "") + " 地点/通勤不满足，一票否决。").strip()
     if position:
         result["position"] = position  # 输入侧元数据覆盖，防止模型改写
+    _cache_put(key, "advice", result)
     return result
 
 
@@ -201,6 +224,10 @@ def run_pipeline(resume_text: str, jd_text: str, company_text: str = "", *, run_
             on_step(n, name)
 
     position = position or _position_from_jd(jd_text) or "未提供岗位名"
+
+    # 原文落盘：让后续步骤（简历顾问）能复用同一 run，不必重新调用前四步
+    (run_dir / "00_resume.txt").write_text(resume_text, encoding="utf-8")
+    (run_dir / "00_jd.txt").write_text(jd_text, encoding="utf-8")
 
     _step(1, "profile_extract")
     profile = profile_extract(resume_text)

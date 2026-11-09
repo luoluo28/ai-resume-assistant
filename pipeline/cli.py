@@ -15,7 +15,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import batch, export, feishu, ingest, ledger, steps
+from . import advisor, advisor_guard, batch, export, feishu, ingest, ledger, steps
 
 
 def _run(args: argparse.Namespace) -> int:
@@ -29,6 +29,44 @@ def _run(args: argparse.Namespace) -> int:
     print("\n--- 关键词覆盖率 ---")
     print(json.dumps(result["coverage"], ensure_ascii=False, indent=2))
     print("\n中间产物目录:", result["run_dir"])
+    return 0
+
+
+def _advisor(args: argparse.Namespace) -> int:
+    """简历顾问：优先复用已有 run（只花 1 次调用），否则现跑前四步。"""
+    if args.run:
+        d = Path(args.run)
+        resume_text = (d / "00_resume.txt").read_text(encoding="utf-8")
+        profile = json.loads((d / "01_profile.json").read_text(encoding="utf-8"))
+        jd = json.loads((d / "02_jd_analysis.json").read_text(encoding="utf-8"))
+        advice = json.loads((d / "04_apply_advice.json").read_text(encoding="utf-8"))
+        position = advice.get("position", "") or ""
+    else:
+        if not (args.resume and args.jd):
+            print("需要 --run，或同时给 --resume 与 --jd", file=sys.stderr)
+            return 2
+        resume_text = ingest.ingest(args.resume)
+        jd_text = ingest.ingest(args.jd)
+        result = steps.run_pipeline(resume_text, jd_text, position=args.title)
+        d = Path(result["run_dir"])
+        profile = json.loads((d / "01_profile.json").read_text(encoding="utf-8"))
+        jd = json.loads((d / "02_jd_analysis.json").read_text(encoding="utf-8"))
+        advice = result["advice"]
+        position = advice.get("position", "") or ""
+
+    adv = advisor.resume_advisor(resume_text, profile, jd, advice, position=position)
+    if "error" in adv:
+        print(f"顾问生成失败: {adv['error']}", file=sys.stderr)
+        return 1
+    (d / "06_resume_advisor.json").write_text(
+        json.dumps(adv, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    text = advisor_guard.render_markdown(adv)
+    print(text)
+    if args.md:
+        Path(args.md).write_text(text, encoding="utf-8")
+        print("\n已写入 Markdown:", args.md)
+    print("\n顾问 JSON:", d / "06_resume_advisor.json")
     return 0
 
 
@@ -135,6 +173,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--company", required=False, help="公司官网 about/价值观页文本（可选）")
     p_run.add_argument("--title", required=False, help="岗位名（可选；不给则从 JD 首行机械提取）")
     p_run.set_defaults(func=_run)
+
+    p_advisor = sub.add_parser("advisor", help="简历顾问：对标 JD 优化 + 项目叙事 + 面试引导")
+    p_advisor.add_argument("--run", help="已有 run 目录（复用 01/02/04 与 00_resume.txt，只花 1 次调用）")
+    p_advisor.add_argument("--resume", help="简历文件（不给 --run 时必填）")
+    p_advisor.add_argument("--jd", help="JD 文件（不给 --run 时必填）")
+    p_advisor.add_argument("--title", help="岗位名（可选）")
+    p_advisor.add_argument("--md", help="把结果另存为 Markdown 的路径（可选）")
+    p_advisor.set_defaults(func=_advisor)
 
     p_batch = sub.add_parser("batch", help="批量跑多个岗位（一份简历对多个 JD）")
     p_batch.add_argument("--jobs", required=False, help="jobs.jsonl 路径（每行一个岗位 JSON；--retry-failed 时可省略）")
