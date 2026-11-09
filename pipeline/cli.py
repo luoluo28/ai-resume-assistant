@@ -15,7 +15,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import advisor, advisor_guard, batch, export, feishu, ingest, ledger, steps
+from . import advisor, advisor_guard, batch, export, feishu, ingest, ledger, sources, steps
 
 
 def _run(args: argparse.Namespace) -> int:
@@ -170,6 +170,43 @@ def _batch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _sources(args: argparse.Namespace) -> int:
+    cats = [c.strip() for c in args.categories.replace("，", ",").split(",") if c.strip()]
+    if not cats:
+        print("请用 --categories 给出至少一个岗位类别，例如 --categories \"AI应用开发,Agent开发\"", file=sys.stderr)
+        return 2
+    path = sources.write_files(cats, city=args.city or "", out=args.out)
+    print(f"城市：{args.city or '不限'}｜类别：{' / '.join(cats)}")
+    for link in sources.build(cats, args.city or ""):
+        print(f"  [{link['platform']}] {link['category']} → {link['url']}")
+    print(f"\n已写入：{path}")
+    print("下一步：点开链接挑岗位 → 把 JD 存进 岗位JD\\ → 登记 jobs.jsonl → batch --dry-run")
+    return 0
+
+
+def _collect(args: argparse.Namespace) -> int:
+    try:
+        r = sources.collect_dir(args.dir, out=args.out, city=args.city or "")
+    except ValueError as e:
+        print(f"错误：{e}", file=sys.stderr)
+        return 1
+    print(f"扫描目录：{args.dir}")
+    print(f"收录 {r['count']} 个岗位 → {r['out']}")
+    for row in r["rows"]:
+        print(f"  · {row['title']}｜城市 {row['city'] or '(未识别)'}｜JD {len(row['jd'])} 字")
+    for name, why in r["skipped"]:
+        print(f"  [跳过] {name} — {why}")
+    if not r["count"]:
+        print("\n目录里没有可用的 JD 文本。先把岗位描述复制进 .txt 文件（每岗一个），再跑这条命令。")
+        return 1
+    print("\n下一步：先不花钱看筛不筛得动 →")
+    print(
+        f'  & "C:\\Users\\马\\.venv-resume-review\\Scripts\\python.exe" -m pipeline.cli batch '
+        f'--resume "{args.resume or '简历.jpg'}" --jobs "{r["out"]}" --dry-run'
+    )
+    return 0
+
+
 def _export(args: argparse.Namespace) -> int:
     advice = json.loads(Path(args.advice).read_text(encoding="utf-8"))
     if args.xlsx:
@@ -245,6 +282,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_batch.add_argument("--min-coverage", type=float, default=0.0, help="两段漏斗：额外要求关键词覆盖率≥N（默认 0=不用这条，靠 veto 和硬条件判断）")
     p_batch.add_argument("--city", default="", help="目标城市（用于预筛；不填则不按城市筛）")
     p_batch.set_defaults(func=_batch)
+
+    p_sources = sub.add_parser("sources", help="按岗位类别+城市生成各平台搜索链接（不抓取、不登录、不投递）")
+    p_sources.add_argument("--categories", required=True, help="岗位类别，逗号分隔，如 \"AI应用开发,Agent开发\"")
+    p_sources.add_argument("--city", default="", help="城市，如 北京")
+    p_sources.add_argument("--out", help="输出 Markdown 路径（默认 data/runs/<时间>/search_links.md）")
+    p_sources.set_defaults(func=_sources)
+
+    p_collect = sub.add_parser("collect", help="把「岗位JD」目录里的 .txt 汇总成 jobs.jsonl")
+    p_collect.add_argument("--dir", required=True, help="存放岗位 txt 的目录，如 C:\\Users\\马\\简历助手\\岗位JD")
+    p_collect.add_argument("--out", help="输出 jobs.jsonl 路径（默认写在该目录下）")
+    p_collect.add_argument("--city", default="", help="文件名里没城市时用的默认城市")
+    p_collect.add_argument("--resume", default="", help="仅用于末尾提示下一条命令的简历路径")
+    p_collect.set_defaults(func=_collect)
 
     p_export = sub.add_parser("export", help="把结果导出 Excel/PDF")
     p_export.add_argument("--advice", required=True, help="04_apply_advice.json 路径")
