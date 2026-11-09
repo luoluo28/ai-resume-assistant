@@ -101,14 +101,32 @@ def _api_key() -> str:
     return key
 
 
-def chat_json(system: str, user: str = "", *, temperature: float = 0.1, max_tokens: int = 0, step: str = "") -> dict:
-    """调用 DeepSeek 并要求 JSON 输出，返回解析后的 dict（失败时含 error 字段）。
-
-    max_tokens=0 时不限制；step 仅用于计量日志（如 "04_apply_advice"）。
-    """
+def _check_budget() -> None:
     if _LIMIT and _STATS["calls"] >= _LIMIT:
         raise BudgetExceeded(f"已达本次调用上限 {_LIMIT} 次，停止调用")
-    url = f"{BASE_URL}/chat/completions"
+
+
+def _send(payload: dict) -> dict:
+    resp = requests.post(
+        f"{BASE_URL}/chat/completions",
+        headers={"Authorization": f"Bearer {_api_key()}"},
+        json=payload,
+        timeout=120,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def chat_json(system: str, user: str = "", *, temperature: float = 0.1, max_tokens: int = 0, step: str = "") -> dict:
+    """调用 OpenAI 兼容接口并要求 JSON 输出，返回解析后的 dict（解析失败时含 error 字段）。
+
+    max_tokens=0 时不限制；step 仅用于计量日志（如 "04_apply_advice"）。
+
+    思考型模型（如 *-pro / reasoner）会先消耗输出配额做思考，max_tokens 偏小时
+    `content` 会返回空字符串。这种情况禁止静默走降级占位：先自动加倍 max_tokens
+    重试一次，仍为空则抛出明确的中文错误。
+    """
+    _check_budget()
     payload = {
         "model": MODEL,
         "messages": [
@@ -120,16 +138,28 @@ def chat_json(system: str, user: str = "", *, temperature: float = 0.1, max_toke
     }
     if max_tokens:
         payload["max_tokens"] = max_tokens
-    resp = requests.post(
-        url,
-        headers={"Authorization": f"Bearer {_api_key()}"},
-        json=payload,
-        timeout=120,
-    )
-    resp.raise_for_status()
-    body = resp.json()
-    content = body["choices"][0]["message"]["content"]
+
+    body = _send(payload)
+    choice = (body.get("choices") or [{}])[0]
+    content = ((choice.get("message") or {}).get("content") or "").strip()
+    finish = choice.get("finish_reason")
     _log_call(step or "chat_json", len(system) + len(user), body.get("usage") or {})
+
+    if not content:
+        retry_tokens = max(1600, (max_tokens or 0) * 2)
+        _check_budget()
+        payload["max_tokens"] = retry_tokens
+        body = _send(payload)
+        choice = (body.get("choices") or [{}])[0]
+        content = ((choice.get("message") or {}).get("content") or "").strip()
+        finish = choice.get("finish_reason")
+        _log_call(f"{step or 'chat_json'}#retry", len(system) + len(user), body.get("usage") or {})
+        if not content:
+            raise RuntimeError(
+                f"模型 {MODEL} 返回空内容（finish_reason={finish}，已把 max_tokens 提到 {retry_tokens} 重试一次）。"
+                "如果用的是思考型模型（*-pro / *-reasoner），思考过程会占用输出配额；"
+                "请继续调大 max_tokens，或改用非思考模型（如 deepseek-v4-flash）。"
+            )
     return parse_json(content)
 
 

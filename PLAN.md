@@ -77,7 +77,7 @@
 |---|---|---|---|---|
 | T19 | 仓库侧防泄露：① `.gitignore` 覆盖 `.env` / `.env.*` / `*.key` / `*.pem` / `secrets/`（豆包已补）② 新增 `scripts/scan_secrets.py` 提交前扫描（命中 `sk-` + 20 位以上、32 位 hex、`Bearer ` 明文即拒绝）③ GitHub 开启 Secret Scanning + Push Protection | Claude | 造一个含假 key 的文件，扫描脚本能拦住；GitHub 页面显示两项保护已开 | 待做 |
 | T20 | BYOK 落地后的安全验收：服务端不落库、不进日志、不进 cookie、不写进 `data/` | Claude | 填一次 key 跑完整流程后，`grep -r` 扫 `data/` 与日志搜不到 key；转发链路能在代码里指出 | 待做 |
-| T21 | 默认只绑 `127.0.0.1`；`--host 0.0.0.0` 必须同时给 `--password`，否则拒绝启动 | Claude | 只给 `--host` 不给口令时报错退出，不允许"能起来但没防护" | 待做 |
+| T21 | 默认只绑 `127.0.0.1`；`--host 0.0.0.0` 必须同时给 `--password`，否则拒绝启动 | Claude | 只给 `--host` 不给口令时报错退出，不允许"能起来但没防护" | 已复核 |
 | T22 | 历史提交密钥审计 | 豆包 | 结论写入复核记录 | 已复核 |
 
 ### G. 通用模型与成本口径（用户确认：支持任意 OpenAI 兼容模型）
@@ -85,7 +85,7 @@
 | 编号 | 任务 | 负责人 | 验收标准 | 状态 |
 |---|---|---|---|---|
 | T23 | 模型名实测：`deepseek-v4-flash` / `deepseek-chat` / `deepseek-v4-pro` 同一把 key 均可用（豆包已验）；`.env.example` 默认改 `deepseek-v4-flash`，README 注明旧名兼容，并写明"任何 OpenAI 兼容接口都可换 `DEEPSEEK_BASE_URL` + `DEEPSEEK_MODEL`" | Claude | `.env.example` 与 README 模型节一致 | 待做 |
-| T24 | 思考模式坑：`v4-pro` 在 `max_tokens=50` 时返回空（思考吃光配额）；各步写死的 800/1400/600/900 在思考模型下会**静默降级**。`chat_json` 遇空 `content` 必须显式报错或自动放大 max_tokens | Claude | 用 pro 跑一次，不允许"无报错但结果变差" | 待做 |
+| T24 | 思考模式坑：`v4-pro` 在 `max_tokens=50` 时返回空（思考吃光配额）；各步写死的 800/1400/600/900 在思考模型下会**静默降级**。`chat_json` 遇空 `content` 必须显式报错或自动放大 max_tokens | 豆包（已修）/ Claude 复核 | 用 pro 跑一次，不允许"无报错但结果变差" | 已复核 |
 | T25 | 成本一节改成「token 用量 × 你的模型单价」，不再绑死 DeepSeek 单一价格 | Claude | 给 token 区间（输入 1,300–2,000 / 输出 600–1,500）+ 换算公式 + ≥3 个模型的示例价 | 待做 |
 
 ## 进度同步机制
@@ -104,6 +104,8 @@
 | 2026-11-09 | `73630e8` | README 20 条问题逐条核对（12 条已改、3 条待补）；LICENSE MIT 已落；legacy 分离已做；截图 `docs/images/home.png` 171,474 B 真实存在且为当前界面 | 基本通过，3 条待补 |
 | 2026-11-09 | `--` | 密钥审计：`.gitignore` 只挡 `.env` 未挡 `.env.*`（豆包已补）；历史 `git log --all -S "sk-"` 唯一命中 `73630e8` 的 README 说明文字「填成 sk- 开头的真实 key」，非真 key；从未提交过 `.env` | 通过（已加固） |
 | 2026-11-09 | `--` | 模型名实测（同一把 key）：`deepseek-v4-flash` ✅、`deepseek-chat` ✅、`deepseek-v4-pro` ✅（但 max_tokens=50 时返回空，需 ≥800） | 通过，坑已记为 T24 |
+| 2026-11-09 | `6ae5288`+ | T24 修复（豆包动手）：`chat_json` 遇空 content 自动加倍 max_tokens 重试一次，仍空抛明确中文错误；桩测试 3/3 PASS（重试成功、报错明确、预算闸门在重试路径也拦得住）；真实模型 pro 两种 max_tokens 均返回正常；回归 `run` 全流程 exit 0 | 通过 |
+| 2026-11-09 | `--` | T21 核对：`webapp.py:294` 有 `global _PASSWORD`，`:306` 非 127.x 且无口令时 return 1，逻辑正确，无需改 | 通过 |
 
 ## 已知未修（不阻塞上面任务，但要知道）
 
