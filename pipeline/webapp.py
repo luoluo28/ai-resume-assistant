@@ -8,6 +8,7 @@ cloudflared 隧道是公网可见的，务必设口令或「用完就关」。
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -31,7 +32,7 @@ except ImportError as e:  # 友好降级：缺依赖给安装提示，而不是�
     )
     raise SystemExit(1)
 
-from . import export, steps
+from . import advisor, advisor_guard, export, steps, store
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 _PASSWORD = os.environ.get("WEB_PASSWORD", "")
@@ -40,6 +41,7 @@ _state = {"resume_name": "", "last_run": ""}
 _executor = ThreadPoolExecutor(max_workers=2)
 _tasks: dict = {}
 _lock = threading.Lock()
+store.init()
 
 app = FastAPI(title="AI简历助手")
 
@@ -91,12 +93,27 @@ def analyze(
         _state["resume_name"] = resume_file.filename
     resume = resume_text.strip() or _read_upload(resume_file)
     jd = jd_text.strip() or _read_upload(jd_file)
-    if not resume or not jd:
-        raise HTTPException(status_code=400, detail="需要提供简历和 JD")
+    missing = []
+    if not resume:
+        missing.append("简历")
+    if not jd:
+        missing.append("岗位 JD")
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail="还缺少：%s。请在输入框里填写，或上传文件后再点「开始分析」。"
+            % "、".join(missing),
+        )
 
     task_id = uuid.uuid4().hex[:12]
     with _lock:
         _tasks[task_id] = {"status": "running", "step": 0, "elapsed": 0, "result": None, "error": None}
+    store.save_task(
+        task_id,
+        status="running",
+        resume_name=_state.get("resume_name", "") or "",
+        position=position.strip(),
+    )
     _executor.submit(_run_task, task_id, resume, jd, company_text.strip(), position.strip())
     return {"task_id": task_id}
 
@@ -107,41 +124,106 @@ def _run_task(task_id: str, resume: str, jd: str, company: str, position: str) -
     def on_step(n: int, name: str) -> None:
         with _lock:
             _tasks[task_id]["step"] = n
+        store.save_task(task_id, step=n)
 
     try:
         result = steps.run_pipeline(resume, jd, company, position=position, on_step=on_step)
         with _lock:
             _tasks[task_id].update(status="done", result=result, elapsed=round(time.time() - t0, 1))
             _state["last_run"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        store.save_task(
+            task_id,
+            status="done",
+            elapsed=round(time.time() - t0, 1),
+            run_dir=result["run_dir"],
+            position=result["advice"].get("position", "") or position,
+        )
     except Exception as e:  # noqa: BLE001
         with _lock:
             _tasks[task_id].update(status="error", error=str(e), elapsed=round(time.time() - t0, 1))
+        store.save_task(task_id, status="error", error=str(e), elapsed=round(time.time() - t0, 1))
+
+
+def _load_task(task_id: str) -> dict:
+    """内存优先；服务重启后从 SQLite + run 目录恢复，不再一刷新就空。"""
+    with _lock:
+        t = _tasks.get(task_id)
+    if t is not None:
+        return t
+    row = store.get_task(task_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="任务不存在，可能已经清理过了")
+    t = {
+        "status": row["status"],
+        "step": row["step"] or 0,
+        "elapsed": row["elapsed"] or 0,
+        "error": row["error"] or None,
+        "result": None,
+    }
+    run_dir = row.get("run_dir") or ""
+    if row["status"] == "done" and run_dir and Path(run_dir).exists():
+        d = Path(run_dir)
+        try:
+            t["result"] = {
+                "run_dir": run_dir,
+                "advice": json.loads((d / "04_apply_advice.json").read_text(encoding="utf-8")),
+                "coverage": json.loads((d / "05_coverage.json").read_text(encoding="utf-8")),
+            }
+        except FileNotFoundError:
+            pass
+    return t
 
 
 @app.get("/api/task/{task_id}")
 def task_status(task_id: str, token: str | None = Cookie(default=None, alias="pipeline_token")):
     _require_auth(token)
-    t = _tasks.get(task_id)
-    if t is None:
-        raise HTTPException(status_code=404, detail="任务不存在")
+    t = _load_task(task_id)
     return {"status": t["status"], "step": t["step"], "elapsed": t["elapsed"], "error": t["error"]}
 
 
 @app.get("/api/task/{task_id}/result")
 def task_result(task_id: str, token: str | None = Cookie(default=None, alias="pipeline_token")):
     _require_auth(token)
-    t = _tasks.get(task_id)
-    if t is None or t["status"] != "done":
-        raise HTTPException(status_code=404, detail="任务未完成或不存在")
+    t = _load_task(task_id)
+    if t["status"] != "done" or not t["result"]:
+        raise HTTPException(status_code=404, detail="任务还没跑完，稍等几秒再看")
     return {"advice": t["result"]["advice"], "coverage": t["result"]["coverage"]}
+
+
+@app.post("/api/task/{task_id}/advisor")
+def task_advisor(task_id: str, token: str | None = Cookie(default=None, alias="pipeline_token")):
+    """简历顾问：复用该任务的 01/02/04，只花 1 次模型调用；同输入第二次命中缓存。"""
+    _require_auth(token)
+    t = _load_task(task_id)
+    if t["status"] != "done" or not t["result"]:
+        raise HTTPException(status_code=409, detail="先等上面的分析跑完，再生成简历顾问")
+    d = Path(t["result"]["run_dir"])
+    if not (d / "00_resume.txt").exists():
+        raise HTTPException(
+            status_code=409,
+            detail="这次任务来自旧版本（没保存简历原文），请重新点一次「开始分析」再生成顾问",
+        )
+    resume_text = (d / "00_resume.txt").read_text(encoding="utf-8")
+    profile = json.loads((d / "01_profile.json").read_text(encoding="utf-8"))
+    jd = json.loads((d / "02_jd_analysis.json").read_text(encoding="utf-8"))
+    advice = t["result"]["advice"]
+    adv = advisor.resume_advisor(
+        resume_text, profile, jd, advice, position=advice.get("position", "") or ""
+    )
+    if "error" in adv:
+        raise HTTPException(status_code=502, detail="简历顾问没生成成功，请再点一次")
+    (d / "06_resume_advisor.json").write_text(
+        json.dumps(adv, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return {"advisor": adv, "markdown": advisor_guard.render_markdown(adv)}
 
 
 @app.post("/api/task/{task_id}/export")
 def task_export(task_id: str, format: str = "xlsx", token: str | None = Cookie(default=None, alias="pipeline_token")):
     _require_auth(token)
-    t = _tasks.get(task_id)
-    if t is None or t["status"] != "done":
-        raise HTTPException(status_code=404, detail="任务未完成或不存在")
+    t = _load_task(task_id)
+    if t["status"] != "done" or not t["result"]:
+        raise HTTPException(status_code=404, detail="任务还没跑完，稍等几秒再看")
     advice = t["result"]["advice"]
     run_dir = Path(t["result"]["run_dir"])
     if format == "xlsx":
@@ -156,12 +238,44 @@ def task_export(task_id: str, format: str = "xlsx", token: str | None = Cookie(d
         out = run_dir / "投递建议.pdf"
         export.to_pdf(advice, out)
         return FileResponse(out, media_type="application/pdf", filename="投递建议.pdf")
-    raise HTTPException(status_code=400, detail="format 只支持 xlsx|pdf")
+    if format == "md":
+        src = run_dir / "06_resume_advisor.json"
+        if not src.exists():
+            raise HTTPException(status_code=400, detail="还没生成简历顾问，先点「生成简历顾问」")
+        adv = json.loads(src.read_text(encoding="utf-8"))
+        out = run_dir / "简历顾问.md"
+        out.write_text(advisor_guard.render_markdown(adv), encoding="utf-8")
+        return FileResponse(out, media_type="text/markdown", filename="简历顾问.md")
+    raise HTTPException(status_code=400, detail="format 只支持 xlsx | pdf | md")
+
+
+@app.get("/api/auth")
+def auth_probe(token: str | None = Cookie(default=None, alias="pipeline_token")):
+    """真接口（替代前端原来那个 404 假探针）：告诉前端要不要登录、当前是否已登录。"""
+    return {
+        "password_required": bool(_PASSWORD),
+        "logged_in": (not _PASSWORD) or (token in _SESSIONS),
+    }
+
+
+@app.get("/api/runs")
+def recent_runs(token: str | None = Cookie(default=None, alias="pipeline_token")):
+    """最近 10 次分析（来自 SQLite，重启后仍在）。"""
+    _require_auth(token)
+    return {"runs": store.list_tasks(10)}
 
 
 @app.get("/api/status")
 def status(token: str | None = Cookie(default=None, alias="pipeline_token")):
     _require_auth(token)
+    latest = store.list_tasks(1)
+    if latest:
+        r = latest[0]
+        return {
+            "resume_name": r.get("resume_name", ""),
+            "last_run": r.get("created_at", ""),
+            "position": r.get("position", ""),
+        }
     return {
         "resume_name": _state["resume_name"],
         "last_run": _state["last_run"],
