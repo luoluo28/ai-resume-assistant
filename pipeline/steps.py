@@ -71,6 +71,7 @@ def _cache_get(key: str, subdir: str) -> dict | None:
     f = DATA_DIR / "cache" / subdir / f"{key}.json"
     if f.exists():
         print(f"[cache] 命中 {subdir} {key[:8]}", file=sys.stderr)
+        llm.note_cache_hit()
         return json.loads(f.read_text(encoding="utf-8"))
     return None
 
@@ -81,13 +82,62 @@ def _cache_put(key: str, subdir: str, obj: dict) -> None:
     f.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
 
 
+# ---------------- 输入裁剪（控上下文长度，省钱） ----------------
+JD_MAX_CHARS = 2000
+_JD_KEEP_HINTS = ("要求", "职责", "熟悉", "掌握", "了解", "学历", "年限", "经验")
+
+
+def trim_jd(text: str, limit: int = JD_MAX_CHARS) -> str:
+    """JD 过长时裁剪：优先保留「任职要求/岗位职责」这类含硬条件的段落。
+
+    ≤ limit 原样返回；否则按行挑含关键词的行，仍超长再按字符截断。
+    """
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    kept, total = [], 0
+    for ln in lines:
+        if any(h in ln for h in _JD_KEEP_HINTS):
+            kept.append(ln)
+            total += len(ln)
+            if total >= limit:
+                break
+    head = text[: max(0, limit - 200)].strip()
+    body = "\n".join(kept)[: limit - len(head) - 10] if kept else ""
+    result = (head + ("\n\n[以下为抽出的硬条件段落]\n" + body if body else "")).strip()
+    return result[:limit]
+
+
+def profile_lite(profile: dict, skills_max: int = 150, projects_max: int = 300) -> dict:
+    """批量分析用的精简画像：只留能撑匹配判断的部分，避免每个岗位重复塞满。"""
+    p = dict(profile or {})
+    for k, lim in (("skills", skills_max), ("projects", projects_max), ("experience", 200)):
+        v = str(p.get(k, "") or "")
+        p[k] = (v[:lim] + "…") if len(v) > lim else v
+    return p
+
+
+def slim_jd_analysis(jd: dict, max_req: int = 8, max_kw: int = 12) -> dict:
+    """把 02 的输出压成 04 真正需要的部分（2546 字符 → 约 800）。"""
+    jd = jd or {}
+    reqs = jd.get("hard_requirements") or []
+    keywords = jd.get("keywords_weighted") or []
+    return {
+        "hard_requirements": reqs[:max_req],
+        "keywords_weighted": keywords[:max_kw],
+        "veto": jd.get("veto") or {"blocked": False, "reason": ""},
+        "jd_summary": str(jd.get("jd_summary", "") or "")[:300],
+    }
+
+
 def profile_extract(resume_text: str) -> dict:
     key = hashlib.sha256(resume_text.encode("utf-8")).hexdigest()[:16]
     cached = _cache_get(key, "profile")
     if cached is not None:
         return cached
     system = _fill(_load_prompt("01_profile_extract.md"), RESUME_TEXT=resume_text)
-    data = llm.chat_json(system=system, user="", temperature=0.1)
+    data = llm.chat_json(system=system, user="", temperature=0.1, max_tokens=800, step="01_profile_extract")
     if "error" in data:
         return data
     result = schema.Profile.from_dict(data).to_dict()
@@ -96,6 +146,7 @@ def profile_extract(resume_text: str) -> dict:
 
 
 def jd_analysis(jd_text: str, profile: dict) -> dict:
+    jd_text = trim_jd(jd_text)
     key = hashlib.sha256(
         (jd_text + "\x00" + json.dumps(profile, ensure_ascii=False, sort_keys=True)).encode("utf-8")
     ).hexdigest()[:16]
@@ -108,7 +159,7 @@ def jd_analysis(jd_text: str, profile: dict) -> dict:
         JD_TEXT=jd_text,
         PROFILE_JSON=json.dumps(profile, ensure_ascii=False),
     )
-    data = llm.chat_json(system=system, user="", temperature=0)
+    data = llm.chat_json(system=system, user="", temperature=0, max_tokens=1400, step="02_jd_analysis")
     if "error" in data:
         return data
     result = schema.JdAnalysis.from_dict(data).to_dict()
@@ -130,11 +181,21 @@ def company_values(company_text: str, jd_text: str) -> dict:
     system = _fill(
         _load_prompt("03_company_values.md"),
         COMPANY_TEXT=company_text,
-        JD_TEXT=jd_text,
+        JD_TEXT=trim_jd(jd_text),
     )
-    data = llm.chat_json(system=system, user="", temperature=0.1)
+    data = llm.chat_json(system=system, user="", temperature=0.1, max_tokens=600, step="03_company_values")
     if "error" in data:
-        return data
+        # 公司价值观只是加分项，解析失败不该让整个岗位作废：降级为占位，继续走第 4 步
+        print(
+            f"[warn] 第 3 步公司文本解析失败（{data.get('error')}），降级为占位继续",
+            file=sys.stderr,
+        )
+        return {
+            "need_company_info": True,
+            "labels": [],
+            "hire_profile": "",
+            "note": "公司信息解析失败，已跳过这一步",
+        }
     result = schema.CompanyValues.from_dict(data).to_dict()
     if len(result.get("labels", [])) > 5:
         print(f"[告警] company_values 返回 {len(result['labels'])} 个标签，已截断为 5", file=sys.stderr)
@@ -143,10 +204,13 @@ def company_values(company_text: str, jd_text: str) -> dict:
     return result
 
 
-def apply_advice(profile: dict, jd: dict, values: dict, *, position: str = "") -> dict:
+def apply_advice(profile: dict, jd: dict, values: dict, *, position: str = "", lite: bool = False) -> dict:
+    """第 4 步。lite=True 时用精简输入（省约 20% 字符，但会削掉软实力与部分项目细节，默认关闭）。"""
+    p_in = profile_lite(profile) if lite else profile
+    j_in = slim_jd_analysis(jd) if lite else jd
     key = hashlib.sha256(
         json.dumps(
-            {"p": profile, "j": jd, "v": values, "pos": position, "v2": "advice-v1"},
+            {"p": p_in, "j": j_in, "v": values, "pos": position, "v3": "advice-v3"},
             ensure_ascii=False,
             sort_keys=True,
         ).encode("utf-8")
@@ -157,12 +221,12 @@ def apply_advice(profile: dict, jd: dict, values: dict, *, position: str = "") -
 
     system = _fill(
         _load_prompt("04_apply_advice.md"),
-        PROFILE_JSON=json.dumps(profile, ensure_ascii=False),
-        JD_ANALYSIS_JSON=json.dumps(jd, ensure_ascii=False),
+        PROFILE_JSON=json.dumps(p_in, ensure_ascii=False),
+        JD_ANALYSIS_JSON=json.dumps(j_in, ensure_ascii=False),
         COMPANY_VALUES_JSON=json.dumps(values, ensure_ascii=False),
         POSITION=position,
     )
-    data = llm.chat_json(system=system, user="", temperature=0.1)
+    data = llm.chat_json(system=system, user="", temperature=0.1, max_tokens=900, step="04_apply_advice")
     if "error" in data:
         return data
     result = schema.ApplyAdvice.from_dict(data).to_dict()

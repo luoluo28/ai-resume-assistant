@@ -70,6 +70,21 @@ def _advisor(args: argparse.Namespace) -> int:
     return 0
 
 
+def _print_prefilter(pre: dict) -> None:
+    p, d, dup = pre["pass"], pre["drop"], pre["dupes"]
+    print(f"\n[预筛] 放行 {len(p)} / 否决 {len(d)} / 重复 {len(dup)}", file=sys.stderr)
+    for r in p:
+        print(
+            f"  ✔ 第{r['index']}条 {r['title'] or '(无标题)'} {r['city']} "
+            f"分数 {r['score']}（命中 {r['matched']}/{r['terms']} 项：{'、'.join(r['matched_terms'][:5])}）",
+            file=sys.stderr,
+        )
+    for r in d:
+        print(f"  ✘ 第{r['index']}条 {r['title'] or '(无标题)'} — {'；'.join(r['reasons'])}", file=sys.stderr)
+    for r in dup:
+        print(f"  = 第{r['index']}条 与第{r['same_as_index']}条重复", file=sys.stderr)
+
+
 def _batch(args: argparse.Namespace) -> int:
     resume_text = ingest.ingest(args.resume)
     jobs_path = args.jobs
@@ -89,7 +104,7 @@ def _batch(args: argparse.Namespace) -> int:
             return 1
         all_jobs = batch.load_jobs(jobs_path)
         jobs = [(i, all_jobs[i]) for i in failed if i < len(all_jobs)]
-        print(f"本次只重跑 {len(jobs)} 条（上次 {len(all_jobs)} 个岗位中失败 {len(failed)} 条），预计最多 {len(jobs) * 4} 次调用")
+        print(f"本次只重跑 {len(jobs)} 条（上次 {len(all_jobs)} 个岗位中失败 {len(failed)} 条）")
     else:
         if not jobs_path:
             print("需要 --jobs 指定岗位文件", file=sys.stderr)
@@ -99,22 +114,59 @@ def _batch(args: argparse.Namespace) -> int:
         total = len(jobs)
         jobs = jobs[: args.max_jobs]
         print(f"[limit] 本次只跑前 {args.max_jobs}/{total} 条（--max-jobs {args.max_jobs}），其余未处理", file=sys.stderr)
-    out = batch.run_batch(resume_text, jobs, jobs_path=jobs_path)
+
+    out = batch.run_batch(
+        resume_text,
+        jobs,
+        jobs_path=jobs_path,
+        city=args.city or "",
+        min_score=args.min_score,
+        min_coverage=args.min_coverage,
+        budget_calls=args.budget_calls,
+        dry_run=args.dry_run,
+    )
+    _print_prefilter(out["prefilter"])
+
+    if out["dry_run"]:
+        print(f"\n[dry-run] 未调用模型。预筛表已写入: {Path(out['run_dir']) / 'prefilter.json'}")
+        st = out.get("stats") or {}
+        print(f"本次调用 {st.get('calls', 0)} 次（只含第 1 步简历解析，命中缓存 {st.get('cache_hits', 0)} 次）")
+        return 0
+
     results = out["results"]
-    ok = sum(1 for r in results if r["ok"])
-    print(f"完成 {ok}/{len(results)} 个岗位")
-    for r in results:
-        if r["ok"]:
-            a = r["advice"]
-            print(f"  [OK] {a.get('position', '')} 结论={a.get('conclusion', '')} 分数={a.get('score', '')}")
-        else:
-            print(f"  [失败] {r.get('title', '')} step={r.get('step', '')} type={r.get('error_type', '')} {r.get('error', '')}")
-    advices = [r["advice"] for r in results if r["ok"]]
+    done = [r for r in results if r.get("ok") and not r.get("skipped")]
+    gated = [
+        r for r in results
+        if r.get("skipped") and not r.get("budget_stop") and "超预算" not in str(r.get("reason", ""))
+    ]
+    over = [r for r in results if r.get("budget_stop")]
+    failed = [r for r in results if not r.get("ok") and not r.get("skipped")]
+
+    print(f"\n完成 {len(done)}｜两段漏斗筛掉 {len(gated)}｜超预算未跑 {len(over)}｜失败 {len(failed)}")
+    for r in done:
+        a = r["advice"]
+        print(f"  [OK] {a.get('position', '')} 结论={a.get('conclusion', '')} 分数={a.get('score', '')}")
+    for r in gated:
+        print(f"  [筛掉] {r.get('title', '')} — {r.get('reason', '')}")
+    for r in over:
+        print(f"  [未跑] {r.get('title', '')} — {r.get('reason', '')}")
+    for r in failed:
+        print(f"  [失败] {r.get('title', '')} step={r.get('step', '')} type={r.get('error_type', '')} {r.get('error', '')}")
+
+    advices = [r["advice"] for r in done]
     if advices:
         xlsx = Path(out["run_dir"]) / "summary.xlsx"
         export.to_excel(advices, xlsx)
         print("汇总表:", xlsx)
+
+    st = out.get("stats") or {}
+    print(
+        f"\n[用量] 调用 {st.get('calls', 0)} 次｜命中缓存 {st.get('cache_hits', 0)} 次｜"
+        f"输入 {st.get('prompt_chars', 0)} 字符｜"
+        f"prompt {st.get('prompt_tokens', 0)} tokens / completion {st.get('completion_tokens', 0)} tokens"
+    )
     print("results.jsonl:", Path(out["run_dir"]) / "results.jsonl")
+    print("预筛表:", Path(out["run_dir"]) / "prefilter.json")
     return 0
 
 
@@ -187,6 +239,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_batch.add_argument("--resume", required=True, help="简历文件（PDF / 图片 / txt）")
     p_batch.add_argument("--retry-failed", action="store_true", help="只重跑上次失败的岗位")
     p_batch.add_argument("--max-jobs", type=int, default=0, help="最多跑 N 条（0=不限）")
+    p_batch.add_argument("--dry-run", action="store_true", help="只做机械预筛、不调用模型，输出预筛表")
+    p_batch.add_argument("--budget-calls", type=int, default=0, help="本次最多花 N 次模型调用（0=不限）")
+    p_batch.add_argument("--min-score", type=int, default=60, help="机械预筛分数阈值（0–100，低于则不进模型；0=关闭预筛）")
+    p_batch.add_argument("--min-coverage", type=float, default=0.0, help="两段漏斗：额外要求关键词覆盖率≥N（默认 0=不用这条，靠 veto 和硬条件判断）")
+    p_batch.add_argument("--city", default="", help="目标城市（用于预筛；不填则不按城市筛）")
     p_batch.set_defaults(func=_batch)
 
     p_export = sub.add_parser("export", help="把结果导出 Excel/PDF")
