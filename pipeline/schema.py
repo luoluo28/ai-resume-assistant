@@ -117,7 +117,9 @@ class ApplyAdvice:
     score: int = 0
     verdict: str = ""
     scores: dict = field(default_factory=dict)  # technical/experience/behavioral/career
+    score_reasons: dict = field(default_factory=dict)  # 四维各一句依据
     location_verdict: str = ""  # PASS/FLAG/FAIL
+    location_note: str = ""  # 地点判定的具体理由
     reasons: list = field(default_factory=list)
     gaps: list = field(default_factory=list)
     advice: str = ""
@@ -132,7 +134,9 @@ class ApplyAdvice:
             position=_str(d.get("position")),
             conclusion=_str(d.get("conclusion")),
             scores=_dict(d.get("scores")),
+            score_reasons=_dict(d.get("score_reasons")),
             location_verdict=_str(d.get("location_verdict")),
+            location_note=_str(d.get("location_note")),
             reasons=[_str(x) for x in _list(d.get("reasons"))],
             gaps=[_str(x) for x in _list(d.get("gaps"))],
             advice=_str(d.get("advice")),

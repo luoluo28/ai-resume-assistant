@@ -10,7 +10,7 @@ import json
 import sys
 from pathlib import Path
 
-_HEADERS = ["岗位名", "结论", "分数", "分档", "四维", "地点判定", "理由", "差距", "建议", "打招呼"]
+_HEADERS = ["岗位名", "结论", "分数", "分档", "四维", "四维依据", "地点判定", "地点说明", "理由", "差距", "建议", "打招呼"]
 
 
 _DIM_SHORT = {"technical": "技", "experience": "经", "behavioral": "软", "career": "职"}
@@ -27,13 +27,18 @@ def _dims_str(scores: dict, labels: dict) -> str:
 
 
 def advice_to_row(advice: dict) -> dict:
+    sr = advice.get("score_reasons") or {}
+    dim_cn = [("technical", "技术"), ("experience", "经验"), ("behavioral", "软实力"), ("career", "职业")]
+    sr_text = "\n".join(f"{cn}：{sr[k]}" for k, cn in dim_cn if sr.get(k))
     return {
         "岗位名": advice.get("position", ""),
         "结论": advice.get("conclusion", ""),
         "分数": advice.get("score", ""),
         "分档": advice.get("verdict", ""),
         "四维": _dims_str(advice.get("scores") or {}, _DIM_SHORT),
+        "四维依据": sr_text,
         "地点判定": advice.get("location_verdict", ""),
+        "地点说明": advice.get("location_note", ""),
         "理由": "\n".join(advice.get("reasons", [])),
         "差距": "\n".join(advice.get("gaps", [])),
         "建议": advice.get("advice", ""),
@@ -41,19 +46,48 @@ def advice_to_row(advice: dict) -> dict:
     }
 
 
+_COL_WIDTHS = {
+    "岗位名": 24, "结论": 16, "分数": 8, "分档": 12, "四维": 28,
+    "四维依据": 56, "地点判定": 10, "地点说明": 34,
+    "理由": 62, "差距": 42, "建议": 42, "打招呼": 32,
+}
+_CENTER_COLS = {"分数", "分档", "四维", "地点判定"}
+
+
 def to_excel(advices: list[dict], path: str | Path) -> None:
-    """把多条投递建议写成 .xlsx（中文无乱码）。"""
+    """把多条投递建议写成 .xlsx（中文无乱码、有列宽、自动换行）。"""
     try:
         import openpyxl
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.utils import get_column_letter
     except ImportError as e:
         raise RuntimeError("导出 Excel 需要 openpyxl，请先 pip install openpyxl") from e
+
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "投递建议"
     ws.append(_HEADERS)
+
+    head_fill = PatternFill("solid", fgColor="0F766E")
+    for i, h in enumerate(_HEADERS, 1):
+        cell = ws.cell(row=1, column=i)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = head_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.column_dimensions[get_column_letter(i)].width = _COL_WIDTHS.get(h, 16)
+    ws.row_dimensions[1].height = 26
+    ws.freeze_panes = "A2"
+
     for a in advices:
         row = advice_to_row(a)
-        ws.append([row.get(h, "") for h in _HEADERS])
+        r = ws.max_row + 1
+        for i, h in enumerate(_HEADERS, 1):
+            cell = ws.cell(row=r, column=i, value=row.get(h, ""))
+            cell.alignment = Alignment(
+                wrap_text=True,
+                vertical="top",
+                horizontal="center" if h in _CENTER_COLS else "left",
+            )
     wb.save(str(path))
 
 
@@ -78,6 +112,19 @@ def advice_html(advice: dict) -> str:
         f"地点：{loc}" if loc else "",
     ] if p)
     dims_line = f'<div class="dims">{dims}</div>' if dims else ""
+    # 四维各自一句依据：让"为什么是这个分"可查
+    sr = advice.get("score_reasons") or {}
+    dim_keys = [("technical", "技术"), ("experience", "经验"), ("behavioral", "软实力"), ("career", "职业")]
+    score_rows = "".join(
+        f"<li><b>{k_cn} {esc((advice.get('scores') or {}).get(k, '?'))}：</b>{esc(sr[k])}</li>"
+        for k, k_cn in dim_keys
+        if sr.get(k)
+    )
+    score_block = f"<h2>四维依据</h2><ul>{score_rows}</ul>" if score_rows else ""
+    loc_block = (
+        f"<h2>地点说明</h2><p>{esc(advice.get('location_note', ''))}</p>"
+        if advice.get("location_note") else ""
+    )
     loc_warn = '<div class="warn">地点判定 FAIL，已一票否决</div>' if advice.get("location_verdict") == "FAIL" else ""
     note_block = f"<h2>备注</h2><p>{esc(advice.get('note', ''))}</p>" if advice.get("note") else ""
 
@@ -96,6 +143,8 @@ def advice_html(advice: dict) -> str:
 <h1>投递建议：{esc(advice.get('position', ''))}</h1>
 <div class="meta">{meta}</div>
 {dims_line}
+{score_block}
+{loc_block}
 {loc_warn}
 <h2>理由</h2><ol>{reasons}</ol>
 <h2>差什么</h2><ul>{gaps}</ul>

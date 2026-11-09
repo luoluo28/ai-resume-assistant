@@ -43,7 +43,10 @@ def _fill(template: str, **kw: str) -> str:
 
 def _ensure_no_error(result: dict, step: str) -> dict:
     if isinstance(result, dict) and "error" in result:
-        detail = str(result.get("error")) or str(result.get("raw", ""))
+        detail = str(result.get("error")) or ""
+        raw = str(result.get("raw", "") or "")
+        if raw:
+            detail = f"{detail}（返回内容前 200 字：{raw[:200]}）"
         raise StepError(step, detail)
     return result
 
@@ -213,7 +216,7 @@ def apply_advice(profile: dict, jd: dict, values: dict, *, position: str = "", l
     j_in = slim_jd_analysis(jd) if lite else jd
     key = _mkey(
         json.dumps(
-            {"p": p_in, "j": j_in, "v": values, "pos": position, "v3": "advice-v3"},
+            {"p": p_in, "j": j_in, "v": values, "pos": position, "v3": "advice-v4"},
             ensure_ascii=False,
             sort_keys=True,
         )
@@ -229,7 +232,7 @@ def apply_advice(profile: dict, jd: dict, values: dict, *, position: str = "", l
         COMPANY_VALUES_JSON=json.dumps(values, ensure_ascii=False),
         POSITION=position,
     )
-    data = llm.chat_json(system=system, user="", temperature=0.1, max_tokens=900, step="04_apply_advice")
+    data = llm.chat_json(system=system, user="", temperature=0.1, max_tokens=1500, step="04_apply_advice")
     if "error" in data:
         return data
     result = schema.ApplyAdvice.from_dict(data).to_dict()

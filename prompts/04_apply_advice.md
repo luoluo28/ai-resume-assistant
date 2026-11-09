@@ -65,6 +65,8 @@
 - FLAG：需商榷
 - FAIL：需 relocate，一票否决（最终结论为「不建议投」）
 
+判定理由写进 `location_note`：一句话说清"岗位在哪个城市 / 你的地点在哪 / 为什么判成这个结果"。禁止只给 PASS/FLAG/FAIL 三个字母就结束。
+
 ## 输出格式
 
 严格输出 JSON，不要包含任何其他解释文字：
@@ -74,7 +76,14 @@
   "position": "岗位名",
   "conclusion": "建议投|不建议投|先补再投",
   "scores": {"technical": 78, "experience": 70, "behavioral": 65, "career": 80},
+  "score_reasons": {
+    "technical": "一句话：依据什么给出这个分（引用 JD 要求与简历原文）",
+    "experience": "一句话：同上",
+    "behavioral": "一句话：同上",
+    "career": "一句话：同上"
+  },
   "location_verdict": "PASS|FLAG|FAIL",
+  "location_note": "一句话：岗位城市与你的所在地，以及为什么这样判定",
   "reasons": ["理由1", "理由2", "理由3"],
   "gaps": ["具体差距1", "具体差距2"],
   "advice": "本周可执行的一件具体事",
@@ -82,3 +91,7 @@
   "note": ""
 }
 ```
+
+补充要求：
+- `score_reasons` 必须四个维度齐全，每句都要能对上 `scores` 的数字，禁止写"综合评估"这类没有依据的话。
+- 如果上游 `{{PROFILE_JSON}}` 里没有地点信息，`location_note` 要写明"简历未提供地点，按未知处理"，不要编一个城市。
