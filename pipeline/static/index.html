@@ -57,6 +57,26 @@
   <h1>AI简历助手</h1>
   <div id="status"></div>
 
+  <details style="margin:12px 0; padding:10px; border:1px solid var(--border); border-radius:8px;">
+    <summary style="cursor:pointer; font-weight:600;">设置（API Key / 模型）</summary>
+    <label>你的 API Key（只存在你本机浏览器，不上传保存）</label>
+    <input id="api_key" type="password" placeholder="sk-…" autocomplete="off">
+    <label>模型名（可选，不填用服务端 .env 里的）</label>
+    <input id="api_model" type="text" placeholder="deepseek-v4-flash">
+    <label>服务地址（可选，默认 DeepSeek）</label>
+    <input id="api_base" type="text" placeholder="https://api.deepseek.com">
+    <div style="margin-top:10px;">
+      <button class="secondary" style="margin-left:0;" onclick="saveSettings()">保存</button>
+      <button class="secondary" onclick="clearSettings()">清除本地 Key</button>
+    </div>
+    <p class="muted" id="key_hint"></p>
+  </details>
+
+  <div id="no_key_banner" class="card" style="display:none; background:#fef3c7;">
+    <b>还没配置 API Key</b>
+    <p class="muted">本工具不代付 API 费用。请在「设置」里填你自己的 key（DeepSeek 一把 key 单岗约 0.008 元），或让管理员在服务端 .env 里配好。</p>
+  </div>
+
   <label>岗位名（可选，不给则从 JD 首行提取）</label>
   <input id="position" type="text" placeholder="例如：后端开发工程师">
 
@@ -88,6 +108,64 @@
 const STEP_NAMES = ["", "提取简历信息", "分析岗位需求", "企业价值观（无文本则跳过）", "生成投递建议"];
 let taskId = null;
 const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+// ---- BYOK：key 只存 localStorage，发请求时放 header，绝不进 URL / cookie / 服务端存储 ----
+const LS_KEY = "llm_settings";
+let serverHasKey = true;
+
+function readSettings() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); }
+  catch (e) { return {}; }
+}
+
+function llmHeaders() {
+  const s = readSettings();
+  const h = {};
+  if (s.api_key) h["X-LLM-Key"] = s.api_key;
+  if (s.model) h["X-LLM-Model"] = s.model;
+  if (s.base_url) h["X-LLM-Base-URL"] = s.base_url;
+  return h;
+}
+
+function updateKeyHint() {
+  const s = readSettings();
+  document.getElementById("key_hint").textContent = s.api_key
+    ? "已保存 Key（" + s.api_key.slice(0, 3) + "…，共 " + s.api_key.length + " 位）"
+    : "未填 Key，将使用服务端 .env 里的 key（若有）。";
+}
+
+function updateNoKeyBanner(v) {
+  serverHasKey = !!v;
+  const s = readSettings();
+  document.getElementById("no_key_banner").style.display = (!s.api_key && !serverHasKey) ? "block" : "none";
+}
+
+function loadSettings() {
+  const s = readSettings();
+  document.getElementById("api_key").value = s.api_key || "";
+  document.getElementById("api_model").value = s.model || "";
+  document.getElementById("api_base").value = s.base_url || "";
+  updateKeyHint();
+}
+
+function saveSettings() {
+  localStorage.setItem(LS_KEY, JSON.stringify({
+    api_key: document.getElementById("api_key").value.trim(),
+    model: document.getElementById("api_model").value.trim(),
+    base_url: document.getElementById("api_base").value.trim(),
+  }));
+  updateKeyHint();
+  updateNoKeyBanner(serverHasKey);
+}
+
+function clearSettings() {
+  localStorage.removeItem(LS_KEY);
+  document.getElementById("api_key").value = "";
+  document.getElementById("api_model").value = "";
+  document.getElementById("api_base").value = "";
+  updateKeyHint();
+  updateNoKeyBanner(serverHasKey);
+}
 
 function dimsText(scores) {
   const labels = { technical: "技术", experience: "经验", behavioral: "软实力", career: "职业" };
@@ -170,7 +248,7 @@ async function analyze() {
   btn.disabled = true;
   document.getElementById("result").innerHTML = "";
   try {
-    const r = await fetch("/api/analyze", { method: "POST", body: fd });
+    const r = await fetch("/api/analyze", { method: "POST", body: fd, headers: llmHeaders() });
     if (r.status === 401) { showLogin(); return; }
     if (!r.ok) { alert(await apiError(r, "提交失败")); return; }
     const data = await r.json();
@@ -244,7 +322,7 @@ async function runAdvisor() {
   btn.disabled = true;
   out.innerHTML = '<p class="muted">正在生成，通常 20–40 秒…</p>';
   try {
-    const r = await fetch("/api/task/" + taskId + "/advisor", { method: "POST" });
+    const r = await fetch("/api/task/" + taskId + "/advisor", { method: "POST", headers: llmHeaders() });
     if (r.status === 401) { showLogin(); return; }
     if (!r.ok) { out.innerHTML = '<p class="locfail">' + esc(await apiError(r, "生成失败")) + "</p>"; return; }
     const { advisor } = await r.json();
@@ -365,7 +443,9 @@ bindPick("jd_file", "jd_picked", "jd_text");
 bindPick("resume_file", "resume_picked", "resume_text");
 
 // 启动时问一次真正存在的接口，决定显示登录页还是主界面
+loadSettings();
 fetch("/api/auth").then(r => r.json()).then(s => {
+  updateNoKeyBanner(!!s.has_key);
   if (s.password_required && !s.logged_in) showLogin();
   else { showApp(); loadStatus(); }
 }).catch(() => { showApp(); loadStatus(); });

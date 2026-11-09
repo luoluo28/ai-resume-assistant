@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 try:
-    from fastapi import Cookie, FastAPI, File, Form, HTTPException, UploadFile
+    from fastapi import Cookie, FastAPI, File, Form, Header, HTTPException, UploadFile
     from fastapi.responses import FileResponse, JSONResponse
     from fastapi.staticfiles import StaticFiles
 except ImportError as e:  # 友好降级：缺依赖给安装提示，而不是甩 Traceback
@@ -32,7 +32,7 @@ except ImportError as e:  # 友好降级：缺依赖给安装提示，而不是�
     )
     raise SystemExit(1)
 
-from . import advisor, advisor_guard, export, steps, store
+from . import advisor, advisor_guard, export, llm, steps, store
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 _PASSWORD = os.environ.get("WEB_PASSWORD", "")
@@ -67,6 +67,39 @@ def _require_auth(token: str | None = Cookie(default=None, alias="pipeline_token
         raise HTTPException(status_code=401, detail="需要口令")
 
 
+_KEY_PLACEHOLDERS = ("your", "xxx", "placeholder", "example", "changeme")
+
+
+def _validate_header_key(key: str | None) -> str | None:
+    """校验请求头带来的 key：长度≥20 且不含占位词；格式不对直接 400，不拿去调 API 试错（那是白花钱）。"""
+    if key is None:
+        return None
+    key = key.strip()
+    if not key:
+        return None
+    low = key.lower()
+    if len(key) < 20 or any(bad in low for bad in _KEY_PLACEHOLDERS):
+        raise HTTPException(status_code=400, detail="API Key 格式不对：长度不足 20 或像占位符，请填真实的 key")
+    return key
+
+
+def _resolve_creds(x_llm_key: str | None, x_llm_base_url: str | None, x_llm_model: str | None) -> dict | None:
+    """从请求头解析 BYOK 凭据：有 key → 返回凭据 dict；无 key → 检查 .env 是否兜底，都没有则 400。"""
+    key = _validate_header_key(x_llm_key)
+    if key:
+        return {
+            "api_key": key,
+            "base_url": (x_llm_base_url or "").strip() or None,
+            "model": (x_llm_model or "").strip() or None,
+        }
+    if not llm.env_has_key():
+        raise HTTPException(
+            status_code=400,
+            detail="还没有 API Key：请在网页「设置」里填你自己的 key，或在本地 .env 里配 LLM_API_KEY。本工具不代付 API 费用。",
+        )
+    return None
+
+
 @app.post("/api/login")
 def login(password: str = Form(...)):
     if _PASSWORD and password != _PASSWORD:
@@ -87,8 +120,12 @@ def analyze(
     company_text: str = Form(""),
     position: str = Form(""),
     token: str | None = Cookie(default=None, alias="pipeline_token"),
+    x_llm_key: str | None = Header(default=None),
+    x_llm_base_url: str | None = Header(default=None),
+    x_llm_model: str | None = Header(default=None),
 ):
     _require_auth(token)
+    creds = _resolve_creds(x_llm_key, x_llm_base_url, x_llm_model)  # 无 key 且无 .env 时这里直接 400，不发起调用
     if resume_file is not None and resume_file.filename:
         _state["resume_name"] = resume_file.filename
     resume = resume_text.strip() or _read_upload(resume_file)
@@ -114,12 +151,15 @@ def analyze(
         resume_name=_state.get("resume_name", "") or "",
         position=position.strip(),
     )
-    _executor.submit(_run_task, task_id, resume, jd, company_text.strip(), position.strip())
+    _executor.submit(_run_task, task_id, resume, jd, company_text.strip(), position.strip(), creds)
     return {"task_id": task_id}
 
 
-def _run_task(task_id: str, resume: str, jd: str, company: str, position: str) -> None:
+def _run_task(task_id: str, resume: str, jd: str, company: str, position: str, creds: dict | None = None) -> None:
     t0 = time.time()
+    # BYOK：凭据在这个 worker 线程里设，跑完清空；contextvars 每个线程独立，不会串到别的请求。
+    if creds:
+        llm.set_request_credentials(api_key=creds["api_key"], base_url=creds.get("base_url"), model=creds.get("model"))
 
     def on_step(n: int, name: str) -> None:
         with _lock:
@@ -142,6 +182,9 @@ def _run_task(task_id: str, resume: str, jd: str, company: str, position: str) -
         with _lock:
             _tasks[task_id].update(status="error", error=str(e), elapsed=round(time.time() - t0, 1))
         store.save_task(task_id, status="error", error=str(e), elapsed=round(time.time() - t0, 1))
+    finally:
+        if creds:
+            llm.clear_request_credentials()
 
 
 def _load_task(task_id: str) -> dict:
@@ -191,9 +234,16 @@ def task_result(task_id: str, token: str | None = Cookie(default=None, alias="pi
 
 
 @app.post("/api/task/{task_id}/advisor")
-def task_advisor(task_id: str, token: str | None = Cookie(default=None, alias="pipeline_token")):
+def task_advisor(
+    task_id: str,
+    token: str | None = Cookie(default=None, alias="pipeline_token"),
+    x_llm_key: str | None = Header(default=None),
+    x_llm_base_url: str | None = Header(default=None),
+    x_llm_model: str | None = Header(default=None),
+):
     """简历顾问：复用该任务的 01/02/04，只花 1 次模型调用；同输入第二次命中缓存。"""
     _require_auth(token)
+    creds = _resolve_creds(x_llm_key, x_llm_base_url, x_llm_model)
     t = _load_task(task_id)
     if t["status"] != "done" or not t["result"]:
         raise HTTPException(status_code=409, detail="先等上面的分析跑完，再生成简历顾问")
@@ -207,9 +257,15 @@ def task_advisor(task_id: str, token: str | None = Cookie(default=None, alias="p
     profile = json.loads((d / "01_profile.json").read_text(encoding="utf-8"))
     jd = json.loads((d / "02_jd_analysis.json").read_text(encoding="utf-8"))
     advice = t["result"]["advice"]
-    adv = advisor.resume_advisor(
-        resume_text, profile, jd, advice, position=advice.get("position", "") or ""
-    )
+    if creds:
+        llm.set_request_credentials(api_key=creds["api_key"], base_url=creds.get("base_url"), model=creds.get("model"))
+    try:
+        adv = advisor.resume_advisor(
+            resume_text, profile, jd, advice, position=advice.get("position", "") or ""
+        )
+    finally:
+        if creds:
+            llm.clear_request_credentials()
     if "error" in adv:
         raise HTTPException(status_code=502, detail="简历顾问没生成成功，请再点一次")
     (d / "06_resume_advisor.json").write_text(
@@ -251,10 +307,11 @@ def task_export(task_id: str, format: str = "xlsx", token: str | None = Cookie(d
 
 @app.get("/api/auth")
 def auth_probe(token: str | None = Cookie(default=None, alias="pipeline_token")):
-    """真接口（替代前端原来那个 404 假探针）：告诉前端要不要登录、当前是否已登录。"""
+    """真接口（替代前端原来那个 404 假探针）：告诉前端要不要登录、当前是否已登录、服务端有没有兜底 key。"""
     return {
         "password_required": bool(_PASSWORD),
         "logged_in": (not _PASSWORD) or (token in _SESSIONS),
+        "has_key": llm.env_has_key(),
     }
 
 

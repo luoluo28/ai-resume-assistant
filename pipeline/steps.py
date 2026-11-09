@@ -86,8 +86,8 @@ def _cache_put(key: str, subdir: str, obj: dict) -> None:
 
 
 def _mkey(text: str) -> str:
-    """缓存 key 里带上模型名：换模型后旧缓存自动失效，不会出现"换了模型却还是旧结果"。"""
-    return hashlib.sha256((text + "\x00model=" + llm.MODEL).encode("utf-8")).hexdigest()[:16]
+    """缓存 key 里带上 base_url+model：换模型/换厂商后旧缓存自动失效，不会出现"换了模型却还是旧结果"。"""
+    return hashlib.sha256((text + "\x00" + llm.cache_salt()).encode("utf-8")).hexdigest()[:16]
 
 
 # ---------------- 输入裁剪（控上下文长度，省钱） ----------------

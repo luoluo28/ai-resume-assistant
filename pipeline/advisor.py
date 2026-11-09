@@ -25,7 +25,7 @@ def _key(resume_text: str, profile: dict, jd: dict, advice: dict, position: str)
             "a": advice,
             "pos": position,
             "v": "advisor-v2",
-            "m": llm.MODEL,
+            "m": llm.cache_salt(),
         },
         ensure_ascii=False,
         sort_keys=True,

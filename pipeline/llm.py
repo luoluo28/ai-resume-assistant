@@ -1,12 +1,13 @@
 """OpenAI 兼容接口调用封装（/chat/completions），默认对接 DeepSeek。
 
-- 密钥从环境变量 LLM_API_KEY（兼容旧名 DEEPSEEK_API_KEY）读取，绝不硬编码、绝不给默认值。
+- 密钥从环境变量 LLM_API_KEY（兼容旧名 DEEPSEEK_API_KEY）或请求级凭据（Web BYOK 的 X-LLM-Key 头）读取，绝不硬编码、绝不给默认值、绝不落盘。
 - 可换任意 OpenAI 兼容模型：LLM_BASE_URL + LLM_MODEL + LLM_API_KEY。
 - 仓库根目录若有 .env 会自动读取（不覆盖已存在的环境变量）。
 - 调用时用 response_format=json_object；解析失败时返回带 error 的兜底 dict，不抛异常。
 """
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import re
@@ -29,10 +30,9 @@ def _load_dotenv() -> None:
 
 _load_dotenv()
 
-BASE_URL = (
-    os.environ.get("LLM_BASE_URL") or os.environ.get("DEEPSEEK_BASE_URL") or "https://api.deepseek.com"
-).rstrip("/")
-MODEL = os.environ.get("LLM_MODEL") or os.environ.get("DEEPSEEK_MODEL") or "deepseek-chat"
+# 请求级凭据：Web 的 BYOK（用户自带 key）通过这里透传，只透传不落盘、不进日志。
+# 用 contextvars 而非全局变量：每个线程/协程有独立副本，并发请求不会串 key。
+_CREDS: contextvars.ContextVar = contextvars.ContextVar("llm_request_creds", default=None)
 
 # 思考模式开关：官方默认是 enabled，会让输出配额被思考过程吃掉（max_tokens 小时 content 为空）。
 # 本流水线全是结构化抽取/打分，不需要思考过程，所以 DeepSeek 默认关闭 thinking。
@@ -40,11 +40,55 @@ MODEL = os.environ.get("LLM_MODEL") or os.environ.get("DEEPSEEK_MODEL") or "deep
 _THINKING_MODE = os.environ.get("LLM_THINKING", "auto").strip().lower()
 
 
-def _thinking_param() -> dict:
+def set_request_credentials(api_key: str | None = None, base_url: str | None = None, model: str | None = None) -> None:
+    """设置当前请求的凭据（Web 服务在 worker 线程开头调用，请求结束调用 clear 清空）。"""
+    _CREDS.set({"api_key": api_key, "base_url": base_url, "model": model})
+
+
+def clear_request_credentials() -> None:
+    _CREDS.set(None)
+
+
+def _resolved() -> dict:
+    """解析本次调用实际用的 base_url / model / api_key：请求级优先，其次 .env，再其次默认。"""
+    c = _CREDS.get() or {}
+    base_url = (
+        c.get("base_url")
+        or os.environ.get("LLM_BASE_URL")
+        or os.environ.get("DEEPSEEK_BASE_URL")
+        or "https://api.deepseek.com"
+    ).strip().rstrip("/")
+    model = (
+        c.get("model")
+        or os.environ.get("LLM_MODEL")
+        or os.environ.get("DEEPSEEK_MODEL")
+        or "deepseek-chat"
+    ).strip()
+    api_key = (
+        c.get("api_key")
+        or os.environ.get("LLM_API_KEY")
+        or os.environ.get("DEEPSEEK_API_KEY")
+        or ""
+    ).strip()
+    return {"base_url": base_url, "model": model, "api_key": api_key}
+
+
+def env_has_key() -> bool:
+    """环境（.env）里是否配了可用 key（Web 端据此决定要不要提示用户填 key）。"""
+    return bool(os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY"))
+
+
+def cache_salt() -> str:
+    """缓存命名空间：base_url + model。换模型/换厂商后旧缓存自动失效，不会串结果。"""
+    c = _resolved()
+    return f"{c['base_url']}|{c['model']}"
+
+
+def _thinking_param(base_url: str, model: str) -> dict:
     if _THINKING_MODE in ("enabled", "disabled"):
         return {"thinking": {"type": _THINKING_MODE}}
     # auto：只对 DeepSeek 端点自动关闭，避免第三方接口不认未知字段报 400
-    if "deepseek" in BASE_URL or MODEL.lower().startswith("deepseek"):
+    if "deepseek" in base_url or model.lower().startswith("deepseek"):
         return {"thinking": {"type": "disabled"}}
     return {}
 
@@ -108,25 +152,15 @@ def _log_call(step: str, prompt_chars: int, usage: dict) -> None:
         pass
 
 
-def _api_key() -> str:
-    key = os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY", "")
-    if not key:
-        raise RuntimeError(
-            "缺少 API 密钥。请在本地 .env 填 LLM_API_KEY（或 DEEPSEEK_API_KEY）后重新运行；"
-            "本仓库为 public，密钥绝不写入代码或提交。"
-        )
-    return key
-
-
 def _check_budget() -> None:
     if _LIMIT and _STATS["calls"] >= _LIMIT:
         raise BudgetExceeded(f"已达本次调用上限 {_LIMIT} 次，停止调用")
 
 
-def _send(payload: dict) -> dict:
+def _send(base_url: str, api_key: str, payload: dict) -> dict:
     resp = requests.post(
-        f"{BASE_URL}/chat/completions",
-        headers={"Authorization": f"Bearer {_api_key()}"},
+        f"{base_url}/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"},
         json=payload,
         timeout=120,
     )
@@ -144,8 +178,16 @@ def chat_json(system: str, user: str = "", *, temperature: float = 0.1, max_toke
     重试一次，仍为空则抛出明确的中文错误。
     """
     _check_budget()
+    cred = _resolved()
+    base_url, model, api_key = cred["base_url"], cred["model"], cred["api_key"]
+    if not api_key:
+        raise RuntimeError(
+            "缺少 API 密钥。请在本地 .env 填 LLM_API_KEY（或 DEEPSEEK_API_KEY），"
+            "或通过请求头 X-LLM-Key 传入自己的 key；本仓库为 public，密钥绝不写入代码或提交。"
+        )
+
     payload = {
-        "model": MODEL,
+        "model": model,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -153,11 +195,11 @@ def chat_json(system: str, user: str = "", *, temperature: float = 0.1, max_toke
         "response_format": {"type": "json_object"},
         "temperature": temperature,
     }
-    payload.update(_thinking_param())
+    payload.update(_thinking_param(base_url, model))
     if max_tokens:
         payload["max_tokens"] = max_tokens
 
-    body = _send(payload)
+    body = _send(base_url, api_key, payload)
     choice = (body.get("choices") or [{}])[0]
     content = ((choice.get("message") or {}).get("content") or "").strip()
     finish = choice.get("finish_reason")
@@ -167,14 +209,14 @@ def chat_json(system: str, user: str = "", *, temperature: float = 0.1, max_toke
         retry_tokens = max(1600, (max_tokens or 0) * 2)
         _check_budget()
         payload["max_tokens"] = retry_tokens
-        body = _send(payload)
+        body = _send(base_url, api_key, payload)
         choice = (body.get("choices") or [{}])[0]
         content = ((choice.get("message") or {}).get("content") or "").strip()
         finish = choice.get("finish_reason")
         _log_call(f"{step or 'chat_json'}#retry", len(system) + len(user), body.get("usage") or {})
         if not content:
             raise RuntimeError(
-                f"模型 {MODEL} 返回空内容（finish_reason={finish}，已把 max_tokens 提到 {retry_tokens} 重试一次）。"
+                f"模型 {model} 返回空内容（finish_reason={finish}，已把 max_tokens 提到 {retry_tokens} 重试一次）。"
                 "如果用的是思考型模型（*-pro / *-reasoner），思考过程会占用输出配额；"
                 "请继续调大 max_tokens，或改用非思考模型（如 deepseek-v4-flash）。"
             )
