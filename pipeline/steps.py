@@ -82,6 +82,11 @@ def _cache_put(key: str, subdir: str, obj: dict) -> None:
     f.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
 
 
+def _mkey(text: str) -> str:
+    """缓存 key 里带上模型名：换模型后旧缓存自动失效，不会出现"换了模型却还是旧结果"。"""
+    return hashlib.sha256((text + "\x00model=" + llm.MODEL).encode("utf-8")).hexdigest()[:16]
+
+
 # ---------------- 输入裁剪（控上下文长度，省钱） ----------------
 JD_MAX_CHARS = 2000
 _JD_KEEP_HINTS = ("要求", "职责", "熟悉", "掌握", "了解", "学历", "年限", "经验")
@@ -132,7 +137,7 @@ def slim_jd_analysis(jd: dict, max_req: int = 8, max_kw: int = 12) -> dict:
 
 
 def profile_extract(resume_text: str) -> dict:
-    key = hashlib.sha256(resume_text.encode("utf-8")).hexdigest()[:16]
+    key = _mkey(resume_text)
     cached = _cache_get(key, "profile")
     if cached is not None:
         return cached
@@ -147,9 +152,7 @@ def profile_extract(resume_text: str) -> dict:
 
 def jd_analysis(jd_text: str, profile: dict) -> dict:
     jd_text = trim_jd(jd_text)
-    key = hashlib.sha256(
-        (jd_text + "\x00" + json.dumps(profile, ensure_ascii=False, sort_keys=True)).encode("utf-8")
-    ).hexdigest()[:16]
+    key = _mkey(jd_text + "\x00" + json.dumps(profile, ensure_ascii=False, sort_keys=True))
     cached = _cache_get(key, "jd")
     if cached is not None:
         return cached
@@ -173,7 +176,7 @@ def company_values(company_text: str, jd_text: str) -> dict:
         print("[skip] 未提供公司文本，第 3 步不调用模型", file=sys.stderr)
         return {"need_company_info": True, "labels": [], "hire_profile": ""}
 
-    key = hashlib.sha256((company_text + "\x00" + jd_text + "\x00v1").encode("utf-8")).hexdigest()[:16]
+    key = _mkey(company_text + "\x00" + jd_text + "\x00v1")
     cached = _cache_get(key, "company")
     if cached is not None:
         return cached
@@ -208,13 +211,13 @@ def apply_advice(profile: dict, jd: dict, values: dict, *, position: str = "", l
     """第 4 步。lite=True 时用精简输入（省约 20% 字符，但会削掉软实力与部分项目细节，默认关闭）。"""
     p_in = profile_lite(profile) if lite else profile
     j_in = slim_jd_analysis(jd) if lite else jd
-    key = hashlib.sha256(
+    key = _mkey(
         json.dumps(
             {"p": p_in, "j": j_in, "v": values, "pos": position, "v3": "advice-v3"},
             ensure_ascii=False,
             sort_keys=True,
-        ).encode("utf-8")
-    ).hexdigest()[:16]
+        )
+    )
     cached = _cache_get(key, "advice")
     if cached is not None:
         return cached

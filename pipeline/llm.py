@@ -1,6 +1,7 @@
-"""DeepSeek 官方 API 调用封装（OpenAI 兼容 /chat/completions）。
+"""OpenAI 兼容接口调用封装（/chat/completions），默认对接 DeepSeek。
 
-- 密钥从环境变量 DEEPSEEK_API_KEY 读取，绝不硬编码、绝不给默认值。
+- 密钥从环境变量 LLM_API_KEY（兼容旧名 DEEPSEEK_API_KEY）读取，绝不硬编码、绝不给默认值。
+- 可换任意 OpenAI 兼容模型：LLM_BASE_URL + LLM_MODEL + LLM_API_KEY。
 - 仓库根目录若有 .env 会自动读取（不覆盖已存在的环境变量）。
 - 调用时用 response_format=json_object；解析失败时返回带 error 的兜底 dict，不抛异常。
 """
@@ -28,8 +29,24 @@ def _load_dotenv() -> None:
 
 _load_dotenv()
 
-BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
-MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+BASE_URL = (
+    os.environ.get("LLM_BASE_URL") or os.environ.get("DEEPSEEK_BASE_URL") or "https://api.deepseek.com"
+).rstrip("/")
+MODEL = os.environ.get("LLM_MODEL") or os.environ.get("DEEPSEEK_MODEL") or "deepseek-chat"
+
+# 思考模式开关：官方默认是 enabled，会让输出配额被思考过程吃掉（max_tokens 小时 content 为空）。
+# 本流水线全是结构化抽取/打分，不需要思考过程，所以 DeepSeek 默认关闭 thinking。
+# 想开启：LLM_THINKING=enabled；第三方厂商不认这个字段时设 LLM_THINKING=auto（不传该参数）。
+_THINKING_MODE = os.environ.get("LLM_THINKING", "auto").strip().lower()
+
+
+def _thinking_param() -> dict:
+    if _THINKING_MODE in ("enabled", "disabled"):
+        return {"thinking": {"type": _THINKING_MODE}}
+    # auto：只对 DeepSeek 端点自动关闭，避免第三方接口不认未知字段报 400
+    if "deepseek" in BASE_URL or MODEL.lower().startswith("deepseek"):
+        return {"thinking": {"type": "disabled"}}
+    return {}
 
 # ---- 调用计量：批量跑完能看见"到底花了几次、多少字" ----
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -92,10 +109,10 @@ def _log_call(step: str, prompt_chars: int, usage: dict) -> None:
 
 
 def _api_key() -> str:
-    key = os.environ.get("DEEPSEEK_API_KEY", "")
+    key = os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY", "")
     if not key:
         raise RuntimeError(
-            "缺少环境变量 DEEPSEEK_API_KEY。请在本地 .env 填真实密钥后重新运行；"
+            "缺少 API 密钥。请在本地 .env 填 LLM_API_KEY（或 DEEPSEEK_API_KEY）后重新运行；"
             "本仓库为 public，密钥绝不写入代码或提交。"
         )
     return key
@@ -136,6 +153,7 @@ def chat_json(system: str, user: str = "", *, temperature: float = 0.1, max_toke
         "response_format": {"type": "json_object"},
         "temperature": temperature,
     }
+    payload.update(_thinking_param())
     if max_tokens:
         payload["max_tokens"] = max_tokens
 
