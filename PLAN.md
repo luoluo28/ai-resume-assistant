@@ -59,7 +59,7 @@
 
 | 编号 | 任务 | 负责人 | 验收标准 | 状态 |
 |---|---|---|---|---|
-| T13 | 重写 `README.md`：是什么 / 怎么装 / 怎么填 key / 怎么用 / 要花多少钱 / 隐私说明 | Claude（执行）/ 豆包（验收） | 零基础用户照抄能跑起来；成本数字来自真实账本 | 待复核 |
+| T13 | 重写 `README.md`：是什么 / 怎么装 / 怎么填 key / 怎么用 / 要花多少钱 / 隐私说明 | Claude（执行）/ 豆包（验收+补修） | 零基础用户照抄能跑起来；成本数字来自真实账本 | 已复核 |
 | T14 | 加 `LICENSE`（MIT） | Claude（执行）/ 豆包（验收） | 文件在仓库根目录，README 里写明 | 待复核 |
 | T15 | 清理 Dify 残留（`AI简历助手.yml`、`docs/` 旧文） | Claude（执行）/ 豆包（验收） | 与主流程无关的文件移入 `legacy/` 或删除，README 不再提 Dify | 待复核 |
 
@@ -75,7 +75,7 @@
 
 | 编号 | 任务 | 负责人 | 验收标准 | 状态 |
 |---|---|---|---|---|
-| T19 | 仓库侧防泄露：① `.gitignore` 覆盖 `.env` / `.env.*` / `*.key` / `*.pem` / `secrets/`（豆包已补）② 新增 `scripts/scan_secrets.py` 提交前扫描（命中 `sk-` + 20 位以上、32 位 hex、`Bearer ` 明文即拒绝）③ GitHub 开启 Secret Scanning + Push Protection | Claude | 造一个含假 key 的文件，扫描脚本能拦住；GitHub 页面显示两项保护已开 | 待做 |
+| T19 | 仓库侧防泄露：① `.gitignore` 覆盖 `.env` / `.env.*` / `*.key` / `*.pem` / `secrets/`（豆包已补）② 新增 `scripts/scan_secrets.py` 提交前扫描 ③ GitHub 开启 Secret Scanning + Push Protection | 豆包（①② 已完成）/ 用户（③ 需在 GitHub 页面手动开） | 造一个含假 key 的文件，扫描脚本能拦住；GitHub 页面显示两项保护已开 | 已复核（③ 待用户开启） |
 | T20 | BYOK 落地后的安全验收：服务端不落库、不进日志、不进 cookie、不写进 `data/` | Claude | 填一次 key 跑完整流程后，`grep -r` 扫 `data/` 与日志搜不到 key；转发链路能在代码里指出 | 待做 |
 | T21 | 默认只绑 `127.0.0.1`；`--host 0.0.0.0` 必须同时给 `--password`，否则拒绝启动 | Claude | 只给 `--host` 不给口令时报错退出，不允许"能起来但没防护" | 已复核 |
 | T22 | 历史提交密钥审计 | 豆包 | 结论写入复核记录 | 已复核 |
@@ -106,6 +106,10 @@
 | 2026-11-09 | `--` | 模型名实测（同一把 key）：`deepseek-v4-flash` ✅、`deepseek-chat` ✅、`deepseek-v4-pro` ✅（但 max_tokens=50 时返回空，需 ≥800） | 通过，坑已记为 T24 |
 | 2026-11-09 | `6ae5288`+ | T24 修复（豆包动手）：`chat_json` 遇空 content 自动加倍 max_tokens 重试一次，仍空抛明确中文错误；桩测试 3/3 PASS（重试成功、报错明确、预算闸门在重试路径也拦得住）；真实模型 pro 两种 max_tokens 均返回正常；回归 `run` 全流程 exit 0 | 通过 |
 | 2026-11-09 | `--` | T21 核对：`webapp.py:294` 有 `global _PASSWORD`，`:306` 非 127.x 且无口令时 return 1，逻辑正确，无需改 | 通过 |
+| 2026-11-09 | `65cf2e1` | 模型无关化（豆包）：`LLM_*` 别名、DeepSeek 默认关闭 thinking（官方默认 enabled，实测 `v4-flash` 800 tokens 直接返回空）、缓存 key 加入模型名。实测 `v4-flash` 全流程跑通、`chat` 不报 400 | 通过 |
+| 2026-11-09 | 未提交 | T19 扫描脚本：真实仓库 CLEAN + 历史 CLEAN；造假 key 文件阳性测试命中 2 处并脱敏 | 通过（GitHub 开关待用户点） |
+| 2026-11-09 | 未提交 | T13 三处补修：CLI 示例改真实路径写法 + `--help` 提示、默认模型改 `v4-flash` 并补思考模式说明、成本改 token 口径 + 体积 404 MB | 通过 |
+| 2026-11-09 | 未提交 | 前端文件选择：原生 "Choose File" 换中文按钮；选 `.txt/.md` 后内容自动填入输入框（解决"选完文件框还空着"） | 待真机复看 |
 
 ## 已知未修（不阻塞上面任务，但要知道）
 

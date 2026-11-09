@@ -16,8 +16,12 @@
   textarea, input[type=text], input[type=password] { width: 100%; box-sizing: border-box;
          padding: 8px; font-size: 15px; border: 1px solid #d1d5db; border-radius: 6px; }
   textarea { min-height: 90px; }
-  input[type=file] { margin-top: 4px; }
-  .picked { font-size: 13px; color: var(--primary); margin-top: 2px; }
+  .pick-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+  .pick-btn { margin-top: 0; padding: 7px 14px; font-size: 14px; background: #fff;
+              color: var(--primary); border: 1px solid var(--primary); border-radius: 8px;
+              white-space: nowrap; flex: 0 0 auto; }
+  .hidden-file { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+  .picked { font-size: 13px; color: var(--primary); margin-top: 0; flex: 1 1 auto; min-width: 0; }
   button { margin-top: 16px; padding: 10px 20px; font-size: 16px; border: none;
            border-radius: 8px; background: var(--primary); color: #fff; cursor: pointer; }
   button.secondary { background: #6b7280; margin-left: 8px; }
@@ -58,13 +62,19 @@
 
   <label>JD：粘贴文本 或 选文件</label>
   <textarea id="jd_text" placeholder="把岗位描述粘贴到这里"></textarea>
-  <input id="jd_file" type="file" accept=".txt,.md,.pdf,.png,.jpg,.jpeg">
-  <div class="picked" id="jd_picked"></div>
+  <div class="pick-row">
+    <button type="button" class="pick-btn" onclick="pick('jd_file')">选择 JD 文件</button>
+    <span class="picked" id="jd_picked">未选择</span>
+  </div>
+  <input id="jd_file" type="file" class="hidden-file" accept=".txt,.md,.pdf,.png,.jpg,.jpeg">
 
   <label>简历：粘贴文本 或 选文件（手机上可直接选照片）</label>
   <textarea id="resume_text" placeholder="简历文本，或选文件"></textarea>
-  <input id="resume_file" type="file" accept="image/*,.txt,.md,.pdf">
-  <div class="picked" id="resume_picked"></div>
+  <div class="pick-row">
+    <button type="button" class="pick-btn" onclick="pick('resume_file')">选择简历文件</button>
+    <span class="picked" id="resume_picked">未选择</span>
+  </div>
+  <input id="resume_file" type="file" class="hidden-file" accept="image/*,.txt,.md,.pdf">
 
   <label>公司官网文本（可选，不填就跳过这一步、不花钱）</label>
   <textarea id="company_text" placeholder="公司 about / 价值观页文本"></textarea>
@@ -94,10 +104,26 @@ async function apiError(r, fallback) {
   }
 }
 
-function bindPick(inputId, labelId) {
+function pick(inputId) {
+  document.getElementById(inputId).click();
+}
+
+function bindPick(inputId, labelId, textareaId) {
   document.getElementById(inputId).addEventListener("change", ev => {
     const f = ev.target.files[0];
-    document.getElementById(labelId).textContent = f ? "已选择：" + f.name : "";
+    const lab = document.getElementById(labelId);
+    const ta = textareaId ? document.getElementById(textareaId) : null;
+    if (!f) { lab.textContent = "未选择"; return; }
+    lab.textContent = "已选择：" + f.name;
+    // 纯文本文件直接读进输入框，避免"选完文件输入框还是空的"
+    if (ta && /\.(txt|md)$/i.test(f.name)) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = String(reader.result || "").trim();
+        if (text) { ta.value = text; lab.textContent = "已选择：" + f.name + "（内容已填入上方框）"; }
+      };
+      reader.readAsText(f, "UTF-8");
+    }
   });
 }
 
@@ -326,8 +352,8 @@ async function exportFile(format, filename) {
   a.click();
 }
 
-bindPick("jd_file", "jd_picked");
-bindPick("resume_file", "resume_picked");
+bindPick("jd_file", "jd_picked", "jd_text");
+bindPick("resume_file", "resume_picked", "resume_text");
 
 // 启动时问一次真正存在的接口，决定显示登录页还是主界面
 fetch("/api/auth").then(r => r.json()).then(s => {

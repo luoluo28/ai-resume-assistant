@@ -42,8 +42,14 @@
 ### 1. 命令行（最稳）
 
 ```bash
-python -m pipeline.cli run --resume 简历.pdf --jd 岗位.txt
+# 下面两个路径是示意，请换成你电脑上真实存在的文件（支持 .txt/.md/.pdf 和简历图片 .jpg/.png）
+python -m pipeline.cli run --resume "D:\我的文件\简历.pdf" --jd "D:\我的文件\岗位JD.txt"
+
+# 先看有哪些子命令和参数（不确定命令怎么写时先跑这个，不要照抄网上的示例路径）
+python -m pipeline.cli --help
 ```
+
+> 报「文件不存在」几乎都是这个原因：命令里的路径不是你真机上的文件。把 `--resume` 后面的路径换成你实际的文件（Windows 路径含中文或空格时用英文双引号包住）。
 
 ### 2. 网页（本机浏览器）
 
@@ -89,8 +95,25 @@ python -m pipeline.webapp --port 8010
 
 ## 模型与密钥
 
-- **模型**：默认 `deepseek-chat`（DeepSeek 官方非思考模型别名）。可在 `.env` 里用 `DEEPSEEK_MODEL` 换成你控制台里对应的模型名。
-- **密钥**：只在本地 `.env` 填 `DEEPSEEK_API_KEY`，绝不提交（本仓库是 public）。服务端日志和 `data/` 下都不会出现 key 明文。
+- **模型**：默认 `deepseek-v4-flash`。任何 OpenAI 兼容接口都能接，改 `.env` 三个变量即可：
+  `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（旧名 `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` / `DEEPSEEK_MODEL` 仍兼容，同时存在时以 `LLM_*` 为准）。
+- **思考模式要注意**：DeepSeek 官方默认开启思考模式，思考过程会占用 `max_tokens`，配额小时 `content` 直接返回空。本项目默认对 DeepSeek 关闭它（`LLM_THINKING=auto`），想要推理能力可设 `LLM_THINKING=enabled`，同时把各步 `max_tokens` 调大。程序遇空内容会自动加倍 `max_tokens` 重试一次，仍失败会明确报错，不会静默给出变差的结果。
+- **换模型后旧缓存自动失效**：缓存 key 里带了模型名，换模型不会命中旧模型的结果。
+- **密钥**：只在本地 `.env` 填 `LLM_API_KEY`，绝不提交（本仓库是 public）。服务端日志和 `data/` 下都不会出现 key 明文。
+
+### 提交前自检（防自己的 key 误提交）
+
+```bash
+python scripts/scan_secrets.py            # 扫已跟踪文件
+python scripts/scan_secrets.py --staged   # 只扫已经 git add 的（提交前跑这个最有用）
+python scripts/scan_secrets.py --history  # 扫全部提交历史（查有没有曾经泄露过）
+```
+
+退出码 `0` = 干净，`1` = 发现疑似密钥（**不要提交**）。命中只报警、不自动改写；打印出来的 key 一律脱敏（只留前 6 位）。
+
+`.gitignore` 已忽略 `.env`、`.env.*`（`.env.example` 除外）、`*.key`、`*.pem`、`*.p12`、`secrets/`。
+
+建议再到 GitHub 仓库 `Settings → Code security` 开启 **Secret Scanning** 与 **Push Protection**，服务端再拦一层。
 
 ## 要花多少钱
 
@@ -98,10 +121,10 @@ python -m pipeline.webapp --port 8010
 
 | 成本 | 真实数字 | 说明 |
 |---|---|---|
-| API 调用 | 单岗 4 次调用（公司文本留空则 3 次）+ 顾问 1 次 | 实测 56 次调用 = 72,218 输入 tokens + 32,190 输出 tokens，按官方价折算约 0.14 元；单岗约 1 分钱量级，每天几岗用一个月 < 1 元 |
+| API 调用 | 单岗 4 次调用（公司文本留空则 3 次）+ 顾问 1 次 | **按 token 算，不绑死某家**：单岗约 1,300–2,000 输入 tokens + 600–1,500 输出 tokens。用你账户的单价乘一下：成本 = 输入 tokens × 输入单价 + 输出 tokens × 输出单价。示例：DeepSeek V4-Flash（输入 1 元/百万、输出 2 元/百万）单岗约 0.008 元，每天 3 岗用一个月 < 1 元 |
 | 失败重跑 | 重跑 = 再花一次钱 | 第 3 步解析失败已改「占位降级」不再整岗作废；缓存命中后同输入不重复花钱 |
 | 时间 | 图片简历首次 OCR 约 9 秒；单岗全流程 20–70 秒；命中缓存秒回 | 批量 10 岗约 1–3 分钟 |
-| 依赖体积 | venv 约 400 MB（实测 415 MB） | 大头是 playwright 的 chromium；不装 chromium 可省约 100 MB |
+| 依赖体积 | venv 约 404 MB（实测 403.9 MB） | 大头是 playwright 的 chromium（约 107 MB）；不装 chromium 可省这一块 |
 | 磁盘 | 每次运行约 0.04 MB | 长期用建议定期清 `data/runs/` |
 | 人工校对 | 图片简历 OCR 有字符级错字 | 图片简历建议人工过一遍；PDF 文本层简历基本无错 |
 | 维护 | 岗位搜索链接会随平台改版失效 | 打不开就手动搜关键词 |
@@ -138,9 +161,10 @@ python -m pipeline.webapp --port 8010
 
 | 现象 | 原因 | 解决 |
 |---|---|---|
-| `错误：文件不存在：简历.pdf` | 照抄了文档里的占位符，自己机器上没有这个文件 | 换成你真实的文件路径，用引号包住 |
+| `错误：文件不存在：D:\我的文件\简历.pdf` | 路径不是你真机上的文件（文档里的路径只是示意） | 换成你真实文件的绝对路径，含空格用英文双引号包住；不确定命令时先跑 `python -m pipeline.cli --help` |
 | `[Errno 10048]` / `Port 8010 is already in use` | 上一次的服务没关，端口被占 | `Get-NetTCPConnection -LocalPort 8010` 找到 PID，`Stop-Process` 停掉，或重启电脑 |
-| `缺少环境变量 DEEPSEEK_API_KEY` | 没建 `.env` 或没填 | 复制 `.env.example` 为 `.env`，填你的 DeepSeek API key |
+| `缺少 API 密钥` | 没建 `.env` 或没填 | 复制 `.env.example` 为 `.env`，填 `LLM_API_KEY`（旧名 `DEEPSEEK_API_KEY` 也认） |
+| `模型 X 返回空内容（finish_reason=length）` | 换成了思考型模型，思考过程吃光 `max_tokens` | 设 `LLM_THINKING=disabled`，或把各步 `max_tokens` 调大，或改用非思考模型 |
 | `无法识别的 cmdlet` / `CommandNotFound` | 命令被拆断（参数之间缺空格） | 每个参数之间必须有空格；整条命令一次粘贴 |
 | 结果里技能写成 `Al` | 图片 OCR 把 `AI` 认成 `Al` | 改传 PDF 或文字版简历，或在网页里手动改解析结果 |
 | 分数每次不一样 | 同输入有缓存，连跑应一致；不一致可能缓存被改或换了文件 | 同一输入连跑 3 次应完全一致，不一致请提 issue |
@@ -160,7 +184,9 @@ pipeline/   核心逻辑（纯函数，不含 UI）
   prefilter.py 机械预筛（零成本，不调模型）
   sources.py / collect.py 岗位搜索链接 / 岗位 txt 汇总
   webapp.py  本地 Web 服务（SQLite 存任务索引）
+  static/    网页前端（index.html 单页 + manifest + sw）
 prompts/    各步 prompt（.md）
+scripts/    scan_secrets.py 提交前密钥扫描
 data/       运行产物（runs/ cache/ ledger.jsonl api_calls.jsonl），已被 .gitignore 忽略
 ```
 
