@@ -41,9 +41,9 @@
 
 | 编号 | 任务 | 负责人 | 验收标准 | 状态 |
 |---|---|---|---|---|
-| T5 | `llm.py` 支持请求级 key：HTTP 请求头带 key 时优先用它，没带回落 `.env` | Claude | 带 header 时用 header 的 key，不带时用 env；两者都无时给中文错误提示 | 待做 |
-| T6 | 前端「设置」里填 key：只存浏览器 localStorage，请求时放 header；界面写明「key 只存在你本机浏览器，不上传」 | Claude | 刷新后 key 仍在；清 localStorage 后失效；服务端日志与 `data/` 下搜不到 key 明文 | 待做 |
-| T7 | 无 key 时的引导页：一步步说明去哪申请、怎么填、大概花多少钱 | Claude | 无 key 打开网页能看到引导，不报 500 | 待做 |
+| T5 | `llm.py` 支持请求级 key：HTTP 请求头带 key 时优先用它，没带回落 `.env` | Claude | 带 header 时用 header 的 key，不带时用 env；两者都无时给中文错误提示 | 待复核 |
+| T6 | 前端「设置」里填 key：只存浏览器 localStorage，请求时放 header；界面写明「key 只存在你本机浏览器，不上传」 | Claude | 刷新后 key 仍在；清 localStorage 后失效；服务端日志与 `data/` 下搜不到 key 明文 | 待复核 |
+| T7 | 无 key 时的引导页：一步步说明去哪申请、怎么填、大概花多少钱 | Claude | 无 key 打开网页能看到引导，不报 500 | 待复核 |
 
 ### C. 记忆（上下文 + 历史数据）
 
@@ -76,7 +76,7 @@
 | 编号 | 任务 | 负责人 | 验收标准 | 状态 |
 |---|---|---|---|---|
 | T19 | 仓库侧防泄露：① `.gitignore` 覆盖 `.env` / `.env.*` / `*.key` / `*.pem` / `secrets/`（豆包已补）② 新增 `scripts/scan_secrets.py` 提交前扫描 ③ GitHub 开启 Secret Scanning + Push Protection | 豆包（①② 已完成）/ 用户（③ 需在 GitHub 页面手动开） | 造一个含假 key 的文件，扫描脚本能拦住；GitHub 页面显示两项保护已开 | 已复核（③ 待用户开启） |
-| T20 | BYOK 落地后的安全验收：服务端不落库、不进日志、不进 cookie、不写进 `data/` | Claude | 填一次 key 跑完整流程后，`grep -r` 扫 `data/` 与日志搜不到 key；转发链路能在代码里指出 | 待做 |
+| T20 | BYOK 落地后的安全验收：服务端不落库、不进日志、不进 cookie、不写进 `data/` | Claude | 填一次 key 跑完整流程后，`grep -r` 扫 `data/` 与日志搜不到 key；转发链路能在代码里指出 | 待复核 |
 | T21 | 默认只绑 `127.0.0.1`；`--host 0.0.0.0` 必须同时给 `--password`，否则拒绝启动 | Claude | 只给 `--host` 不给口令时报错退出，不允许"能起来但没防护" | 已复核 |
 | T22 | 历史提交密钥审计 | 豆包 | 结论写入复核记录 | 已复核 |
 
