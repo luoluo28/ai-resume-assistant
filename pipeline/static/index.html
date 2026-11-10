@@ -118,6 +118,22 @@
   .ask-item { margin: 8px 0; }
   .ask-item .q { font-weight: 600; font-size: 14px; }
   .ask-item .a { font-size: 14px; margin-top: 3px; white-space: pre-wrap; }
+  /* 岗位大类预置（辅助输入，不是主按钮，所以做成轻量标签） */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .chip {
+    display: inline-flex; align-items: center; padding: 8px 12px; font-size: 13px;
+    border-radius: 999px; background: var(--soft); color: var(--text);
+    border: 1px solid var(--border); cursor: pointer; user-select: none;
+  }
+  .chip:active { background: #ccfbf1; border-color: var(--primary); }
+  .switch-row { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+  .switch-row input { width: 18px; height: 18px; }
+  .switch-row label { margin: 0; font-weight: 400; font-size: 14px; }
+  /* 抓到的岗位 */
+  .job { padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .job:last-child { border-bottom: none; }
+  .job a { color: var(--primary); font-weight: 600; font-size: 15px; text-decoration: none; }
+  .job .meta { font-size: 13px; color: var(--muted); margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -234,11 +250,18 @@ function viewForm(id) {
       ${jdInputs()}`;
   } else if (id === "jobs") {
     fields = `
-      <label>岗位关键词（多个用逗号隔开）</label>
-      <input id="f_kw" type="text" placeholder="例如：AI应用开发实习生，Python">
+      <label>岗位关键词（一次可以填多个，用逗号隔开）</label>
+      <input id="f_kw" type="text" placeholder="例如：AI应用开发实习生，AI全栈，AI后端">
+      <div class="chips">${["AI应用开发实习生", "AI全栈", "AI后端", "Agent", "AI产品经理", "Python"]
+        .map(c => `<span class="chip" onclick="addKw('${c}')">${c}</span>`).join("")}</div>
+      <p class="muted" style="margin-top:10px;">AI 类岗位公司写法五花八门，把几个叫法一起填，一次都搜到。牛客上是模糊匹配，存量偏少；BOSS 上量最大，但要登录才看得到。</p>
       <label>城市（可选）</label>
       <input id="f_city" type="text" placeholder="例如：北京">
-      <p class="muted" style="margin-top:8px;">只生成各平台的搜索链接，不抓取、不登录、不投递。</p>`;
+      <div class="switch-row">
+        <input id="f_collect" type="checkbox" checked>
+        <label for="f_collect">顺手抓一轮牛客的具体岗位（不花 token 费）</label>
+      </div>
+      <p class="muted" style="margin-top:8px;">抓取只是读公开页面，不登录、不投递；BOSS / 实习僧 / 猎聘 要登录才看得到岗位，只给入口。</p>`;
   } else {
     fields = `
       <label>岗位名（可选）</label>
@@ -304,38 +327,70 @@ async function runEntry(id) {
   return runAnalyze(id);
 }
 
+// 岗位大类预置：点一下追加一个关键词，不覆盖已填的
+function addKw(word) {
+  const el = document.getElementById("f_kw");
+  if (!el) return;
+  const cur = el.value.split(/[,，、]/).map(s => s.trim()).filter(Boolean);
+  if (cur.indexOf(word) >= 0) { el.value = cur.filter(x => x !== word).join("，"); return; }
+  cur.push(word);
+  el.value = cur.join("，");
+}
+
 async function runJobs() {
   const kw = document.getElementById("f_kw").value.split(/[,，、]/).map(s => s.trim()).filter(Boolean);
   const city = document.getElementById("f_city").value.trim();
+  const doCollect = !!(document.getElementById("f_collect") || {}).checked;
   if (!kw.length) { alert("请至少填一个岗位关键词"); return; }
   const btn = document.getElementById("btn_run");
+  const prog = document.getElementById("progress");
   btn.disabled = true;
+  prog.textContent = doCollect ? "正在抓取牛客岗位，约 3–8 秒（这一步不花钱）…" : "生成入口链接…";
   try {
     const r = await fetch("/api/sources", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ categories: kw, city }),
+      body: JSON.stringify({ categories: kw, city, collect: doCollect }),
     });
     if (r.status === 401) { showLogin(); return; }
-    if (!r.ok) { alert(await apiError(r, "生成失败")); return; }
+    if (!r.ok) { prog.innerHTML = '<span class="err">' + esc(await apiError(r, "生成失败")) + "</span>"; return; }
     const d = await r.json();
+    prog.textContent = "";
     document.getElementById("main").innerHTML = viewJobsResult(d, kw, city);
   } finally { btn.disabled = false; }
 }
 
 function viewJobsResult(d, kw, city) {
+  const jobs = d.jobs || [];
+  const jobsBlock = jobs.length ? `
+    <div class="card"><h2>抓到 ${jobs.length} 个具体岗位</h2>
+      <p class="muted">来自牛客公开搜索结果，这一步没有调用模型，不产生 token 费用。点开岗位页复制 JD，再回来诊断。</p>
+      ${jobs.map(j => `<div class="job">
+        <a href="${esc(j.url)}" target="_blank" rel="noreferrer">${esc(j.title)}</a>
+        <div class="meta">${[j.salary, j.city, j.extra].filter(Boolean).map(esc).join(" ｜ ")}</div>
+      </div>`).join("")}
+      <p class="muted" style="margin-top:10px;">搜的是一轮公开结果，可能不是全量；想更全就去下面各平台入口自己翻。</p>
+    </div>` : `
+    <div class="card"><h2>这轮没抓到岗位</h2>
+      <p class="muted">${d.collect ? "牛客这次没返回结果（它偶尔返回空壳页），点下面的入口手动搜更稳。" : "你关掉了抓取开关，所以只给入口链接。"}</p>
+      ${(d.errors || []).length ? '<p class="muted">' + esc(d.errors.join("；")) + "</p>" : ""}
+    </div>`;
+
   const groups = kw.map(c => {
-    const ls = d.links.filter(l => l.category === c);
-    return `<div class="card"><h2>${esc(c)}</h2>` + ls.map(l => `
+    const ls = (d.links || []).filter(l => l.category === c);
+    return `<div class="card"><h2>${esc(c)} 的平台入口</h2>` + ls.map(l => `
       <div style="margin:10px 0;">
         <a class="link" href="${esc(l.url)}" target="_blank" rel="noreferrer">${esc(l.platform)}</a>
+        ${l.needs_login ? '<span class="pill warn" style="margin-left:6px;">需登录</span>' : ""}
         <div class="muted">${esc(l.why)}</div>
       </div>`).join("") + `</div>`;
   }).join("");
+
   return `<button class="ghost" style="min-height:44px;padding:0 12px;font-size:14px;" onclick="go('form','jobs')">‹ 返回</button>
-    <h1 style="margin-top:14px;">搜索链接</h1>
-    <p class="muted">${esc(city || "不限城市")} · 点开挑岗位，把 JD 复制回来走「简历诊断」。</p>
+    <h1 style="margin-top:14px;">${esc(city || "不限城市")}</h1>
+    <p class="muted">${esc(kw.join(" / "))}</p>
+    ${jobsBlock}
     ${groups}
-    <p class="muted" style="margin-top:14px;">链接结构可能随平台改版失效，打不开就退回平台首页手动搜关键词。</p>`;
+    <p class="muted" style="margin-top:14px;">平台链接结构会随改版失效；打不开就退回平台首页手动搜关键词。</p>`;
 }
 
 async function runJdOnly() {

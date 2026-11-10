@@ -336,14 +336,19 @@ def jd_parse(
 
 @app.post("/api/sources")
 def sources_api(payload: dict = Body(...), token: str | None = Cookie(default=None, alias="pipeline_token")):
-    """岗位搜集 L1：按关键词 + 城市生成各平台搜索链接（不抓取、不登录、不投递）。"""
+    """岗位搜集：L1 生成平台搜索入口；collect=true 时额外抓一次牛客真实岗位（不调模型、0 token）。"""
     _require_auth(token)
     cats = [str(c).strip() for c in (payload.get("categories") or []) if str(c).strip()]
     city = str(payload.get("city") or "").strip()
     if not cats:
         raise HTTPException(status_code=400, detail="请至少填一个岗位关键词")
     links = sources.build(cats, city)
-    return {"categories": cats, "city": city, "links": links}
+    result = {"categories": cats, "city": city, "links": links}
+    if payload.get("collect"):
+        result.update(sources.collect_jobs(cats, city))
+    else:
+        result.update({"jobs": [], "count": 0, "errors": [], "token_cost": 0})
+    return result
 
 
 @app.get("/api/task/{task_id}")
