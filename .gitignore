@@ -227,7 +227,9 @@ __marimo__/
 # Pipeline data (intermediate artifacts)
 data/runs/
 data/cache/
+data/profiles/
 data/ledger.jsonl
+data/ledger.jsonl.migrated
 data/api_calls.jsonl
 data/app.db
 data/app.db-journal

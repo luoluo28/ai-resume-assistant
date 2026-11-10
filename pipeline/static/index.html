@@ -102,6 +102,12 @@
   <button id="btn_analyze" onclick="analyze()">开始分析</button>
   <div id="progress"></div>
   <div id="result"></div>
+
+  <details style="margin:16px 0; padding:10px; border:1px solid var(--border); border-radius:8px;">
+    <summary style="cursor:pointer; font-weight:600;" onclick="loadHistory()">我的记录</summary>
+    <div id="history_list" class="muted">点开后加载…</div>
+    <div id="history_detail"></div>
+  </details>
 </div>
 
 <script>
@@ -441,6 +447,40 @@ async function exportFile(format, filename) {
 
 bindPick("jd_file", "jd_picked", "jd_text");
 bindPick("resume_file", "resume_picked", "resume_text");
+
+let historyLoaded = false;
+async function loadHistory() {
+  if (historyLoaded) return;
+  const el = document.getElementById("history_list");
+  el.textContent = "加载中…";
+  try {
+    const r = await fetch("/api/history?limit=20&offset=0");
+    if (!r.ok) { el.textContent = "加载失败"; return; }
+    const { history } = await r.json();
+    historyLoaded = true;
+    if (!history || !history.length) { el.textContent = "还没有记录。"; return; }
+    el.innerHTML = history.map(h =>
+      '<div style="padding:6px 0; border-bottom:1px solid var(--border); cursor:pointer;" onclick="openHistory(\'' + h.session_id + '\')">'
+      + "<b>" + esc(h.position || "未命名") + "</b> "
+      + '<span class="muted">' + esc(h.score ?? "?") + " 分 · " + esc(h.verdict || "") + " · " + esc(h.created_at || "") + "</span>"
+      + "</div>"
+    ).join("");
+  } catch (e) { el.textContent = "加载失败"; }
+}
+
+async function openHistory(sessionId) {
+  const el = document.getElementById("history_detail");
+  try {
+    const r = await fetch("/api/history/" + sessionId);
+    if (!r.ok) { el.innerHTML = '<p class="locfail">' + esc(await apiError(r, "打开失败")) + "</p>"; return; }
+    const { advice } = await r.json();
+    el.innerHTML = '<div class="card"><b>' + esc(advice.position) + "</b> "
+      + '<span>' + esc(advice.score) + " 分 " + esc(advice.verdict) + "</span>"
+      + "<p>" + esc(advice.conclusion) + "</p>"
+      + "<h3>差什么</h3><ul>" + (advice.gaps || []).map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>"
+      + "<h3>怎么补</h3><p>" + esc(advice.advice) + "</p></div>";
+  } catch (e) { el.innerHTML = ""; }
+}
 
 // 启动时问一次真正存在的接口，决定显示登录页还是主界面
 loadSettings();

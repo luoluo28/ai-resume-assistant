@@ -12,10 +12,11 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from . import ledger, llm, schema, scoring
+from . import ledger, llm, schema, scoring, store
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+PROFILES_DIR = DATA_DIR / "profiles"
 
 
 class StepError(Exception):
@@ -88,6 +89,46 @@ def _cache_put(key: str, subdir: str, obj: dict) -> None:
 def _mkey(text: str) -> str:
     """缓存 key 里带上 base_url+model：换模型/换厂商后旧缓存自动失效，不会出现"换了模型却还是旧结果"。"""
     return hashlib.sha256((text + "\x00" + llm.cache_salt()).encode("utf-8")).hexdigest()[:16]
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def _profile_save(resume_sha: str, profile: dict) -> None:
+    PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+    (PROFILES_DIR / f"{resume_sha}.json").write_text(
+        json.dumps(profile, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def _profile_load(resume_sha: str, device_id: str) -> dict | None:
+    """按简历 sha 复用 01 步画像；归属靠 sessions 反查——这份简历从没被当前设备用过就不复用（防串）。"""
+    f = PROFILES_DIR / f"{resume_sha}.json"
+    if not f.exists():
+        return None
+    if not store.device_has_resume(device_id, resume_sha):
+        return None
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _session_reuse(device_id: str, resume_sha: str, jd_sha: str, position: str) -> dict | None:
+    """同一设备 + 同一简历 + 同一 JD + 同一岗位名 → 直接复用上次 run_dir 结果，0 次模型调用。"""
+    row = store.get_session_by_keys(device_id, resume_sha, jd_sha, position)
+    if not row or not row.get("run_dir"):
+        return None
+    d = Path(row["run_dir"])
+    try:
+        advice = json.loads((d / "04_apply_advice.json").read_text(encoding="utf-8"))
+        cov = json.loads((d / "05_coverage.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    print("[session] 命中，复用上次结果（0 次调用）", file=sys.stderr)
+    llm.note_cache_hit()
+    return {"run_dir": str(d), "advice": advice, "coverage": cov, "reused": True}
 
 
 # ---------------- 输入裁剪（控上下文长度，省钱） ----------------
@@ -281,11 +322,21 @@ def _dump(run_dir: Path, name: str, obj: dict) -> None:
     )
 
 
-def run_pipeline(resume_text: str, jd_text: str, company_text: str = "", *, run_dir=None, position=None, on_step=None) -> dict:
+def run_pipeline(resume_text: str, jd_text: str, company_text: str = "", *, run_dir=None, position=None, on_step=None, device_id: str = "local") -> dict:
     """串联四步；每步落中间文件；任一步失败抛 StepError（不静默跳过）。
 
     on_step(n: int, name: str) 可选回调，用于上报进度（如 Web 服务轮询）。
+    device_id 用于 sessions / profiles 复用（Web 传 cookie，CLI 默认 'local'）。
     """
+    position = position or _position_from_jd(jd_text) or "未提供岗位名"
+    resume_sha = _sha256(resume_text)
+    jd_sha = _sha256(jd_text)
+
+    # 0) 同设备 + 同简历 + 同 JD + 同岗位名 → 复用上次结果，0 次模型调用
+    reused = _session_reuse(device_id, resume_sha, jd_sha, position)
+    if reused:
+        return reused
+
     run_dir = Path(run_dir) if run_dir else _new_run_dir()
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -293,16 +344,17 @@ def run_pipeline(resume_text: str, jd_text: str, company_text: str = "", *, run_
         if on_step:
             on_step(n, name)
 
-    position = position or _position_from_jd(jd_text) or "未提供岗位名"
-
     # 原文落盘：让后续步骤（简历顾问）能复用同一 run，不必重新调用前四步
     (run_dir / "00_resume.txt").write_text(resume_text, encoding="utf-8")
     (run_dir / "00_jd.txt").write_text(jd_text, encoding="utf-8")
 
     _step(1, "profile_extract")
-    profile = profile_extract(resume_text)
+    profile = _profile_load(resume_sha, device_id)
+    if profile is None:
+        profile = profile_extract(resume_text)
+        _profile_save(resume_sha, profile)
+        _ensure_no_error(profile, "profile_extract")
     _dump(run_dir, "01_profile.json", profile)
-    _ensure_no_error(profile, "profile_extract")
 
     _step(2, "jd_analysis")
     jd = jd_analysis(jd_text, profile)
@@ -326,8 +378,9 @@ def run_pipeline(resume_text: str, jd_text: str, company_text: str = "", *, run_
     _dump(run_dir, "05_coverage.json", cov)
 
     ledger.upsert(jd_text, advice, str(run_dir))
+    store.save_session(device_id, resume_sha, jd_sha, position, advice, str(run_dir))
 
-    return {"run_dir": str(run_dir), "advice": advice, "coverage": cov}
+    return {"run_dir": str(run_dir), "advice": advice, "coverage": cov, "reused": False}
 
 
 if __name__ == "__main__":
