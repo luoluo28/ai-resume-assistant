@@ -71,6 +71,8 @@ python -m pipeline.webapp --host 0.0.0.0 --port 8000 --password 你的口令
 
 ## 安装
 
+> **不想看这一整节？** 把仓库丢给你的 AI 助手（Claude Code / Codex / 豆包办公模式 / WorkBuddy 等），说一句「按 `接续指令.md` 把它跑起来」，它会照着做并告诉你打开哪个网址。那份文件里还带一张报错对照表。
+
 > 下面所有命令都在**仓库根目录**下执行（`cd ai-resume-assistant` 之后）。在别的目录跑 `python -m pipeline...` 会报 `No module named 'pipeline'`。
 
 ```bash
@@ -84,7 +86,7 @@ pip install -r requirements.txt
 
 # 3. 配置密钥
 # Windows: copy .env.example .env     macOS/Linux: cp .env.example .env
-# 编辑 .env，把 DEEPSEEK_API_KEY= 后面填成 sk- 开头的真实 key
+# 编辑 .env，把 LLM_API_KEY= 后面填成 sk- 开头的真实 key
 
 # 4. 启动
 python -m pipeline.webapp --port 8010

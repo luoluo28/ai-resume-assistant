@@ -17,8 +17,14 @@ def _norm(s: str) -> str:
     return re.sub(r"[^0-9a-z一-鿿+#.]+", "", str(s).lower())
 
 
-def _hit(kw: str, resume_raw: str) -> bool:
-    """关键词命中：英文/术语按 token 精确匹配；中文词子串匹配（极短单字跳过）。"""
+def _hit(kw: str, resume_raw: str, *, loose: bool = False) -> bool:
+    """关键词命中：英文/术语按 token 精确匹配；中文词子串匹配（极短单字跳过）。
+
+    loose=True 时，复合短语（如「Docker 容器化部署」「GitHub 代码托管」）拆开逐词判断，
+    任一子词命中即算命中。理由：JD 的关键词通常是短语，简历里只写单个术语，
+    严格按整串比会把明明具备的技能判成缺失（实测同一份输入覆盖率被压到 11%，
+    而模型给技术维打了 85 分，两个数字自相矛盾）。
+    """
     kw_norm = _norm(kw)
     if not kw_norm:
         return False
@@ -27,11 +33,25 @@ def _hit(kw: str, resume_raw: str) -> bool:
         return kw_norm in tokens
     if len(kw_norm) < 2:
         return False
-    return kw_norm in _norm(resume_raw)
+    if kw_norm in _norm(resume_raw):
+        return True
+    if not loose:
+        return False
+    for part in re.split(r"[\s、/／（）()\[\],，·]+", str(kw)):
+        part = part.strip()
+        if not part or part == kw:
+            continue
+        if _hit(part, resume_raw):
+            return True
+    return False
 
 
-def keyword_coverage_report(profile: dict, jd: dict) -> dict:
-    """JD 关键词在简历（技能 + 项目 + 经验）中的覆盖率。"""
+def keyword_coverage_report(profile: dict, jd: dict, *, strict: bool = False) -> dict:
+    """JD 关键词在简历（技能 + 项目 + 经验）中的覆盖率。
+
+    strict=False（默认，用于展示给人看）：复合短语按子词判断，避免「明明会 Docker 却显示缺失」。
+    strict=True（用于省钱闸门）：按整串严格判断，宁可保守也不放宽，免得批量任务多花钱。
+    """
     keywords = jd.get("keywords_weighted", [])
     resume_raw = " ".join(
         [
@@ -45,7 +65,7 @@ def keyword_coverage_report(profile: dict, jd: dict) -> dict:
         kw = item.get("keyword", "") if isinstance(item, dict) else str(item)
         if not kw:
             continue
-        (matched if _hit(kw, resume_raw) else missing).append(kw)
+        (matched if _hit(kw, resume_raw, loose=not strict) else missing).append(kw)
     total = len(matched) + len(missing)
     coverage = round(len(matched) / total, 3) if total else 0.0
     return {

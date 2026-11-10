@@ -201,7 +201,8 @@ def gate_after_jd(jd: dict, profile: dict, *, min_coverage: float = 0.0) -> tupl
         return False, f"硬条件 {len(fails)}/{len(reqs)} 条不满足（{names}）"
 
     if min_coverage > 0:
-        cov = scoring.keyword_coverage_report(profile, jd)
+        # 闸门用严格口径：宁可保守（少放一条进 04），也不因为放宽匹配而多花钱
+        cov = scoring.keyword_coverage_report(profile, jd, strict=True)
         ratio = float(cov.get("coverage", 0) or 0)
         if ratio < min_coverage:
             return False, f"关键词覆盖 {ratio:.0%} 低于阈值 {min_coverage:.0%}"
