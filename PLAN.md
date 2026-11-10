@@ -60,8 +60,8 @@
 | 编号 | 任务 | 负责人 | 验收标准 | 状态 |
 |---|---|---|---|---|
 | T13 | 重写 `README.md`：是什么 / 怎么装 / 怎么填 key / 怎么用 / 要花多少钱 / 隐私说明 | Claude（执行）/ 豆包（验收+补修） | 零基础用户照抄能跑起来；成本数字来自真实账本 | 已复核 |
-| T14 | 加 `LICENSE`（MIT） | Claude（执行）/ 豆包（验收） | 文件在仓库根目录，README 里写明 | 待复核 |
-| T15 | 清理 Dify 残留（`AI简历助手.yml`、`docs/` 旧文） | Claude（执行）/ 豆包（验收） | 与主流程无关的文件移入 `legacy/` 或删除，README 不再提 Dify | 待复核 |
+| T14 | 加 `LICENSE`（MIT） | Claude（执行）/ 豆包（验收） | 文件在仓库根目录，README 里写明 | 已复核 |
+| T15 | 清理 Dify 残留（`AI简历助手.yml`、`docs/` 旧文） | Claude（执行）/ 豆包（验收） | 与主流程无关的文件移入 `legacy/` 或删除，README 不再提 Dify | 已复核 |
 
 ### E. 部署（让"别人打开网页就能用"）
 
@@ -84,9 +84,9 @@
 
 | 编号 | 任务 | 负责人 | 验收标准 | 状态 |
 |---|---|---|---|---|
-| T23 | 模型名实测：`deepseek-v4-flash` / `deepseek-chat` / `deepseek-v4-pro` 同一把 key 均可用（豆包已验）；`.env.example` 默认改 `deepseek-v4-flash`，README 注明旧名兼容，并写明"任何 OpenAI 兼容接口都可换 `DEEPSEEK_BASE_URL` + `DEEPSEEK_MODEL`" | Claude | `.env.example` 与 README 模型节一致 | 待做 |
+| T23 | 模型名实测：`deepseek-v4-flash` / `deepseek-chat` / `deepseek-v4-pro` 同一把 key 均可用（豆包已验）；`.env.example` 默认改 `deepseek-v4-flash`，README 注明旧名兼容，并写明"任何 OpenAI 兼容接口都可换 `DEEPSEEK_BASE_URL` + `DEEPSEEK_MODEL`" | Claude | `.env.example` 与 README 模型节一致 | 已复核 |
 | T24 | 思考模式坑：`v4-pro` 在 `max_tokens=50` 时返回空（思考吃光配额）；各步写死的 800/1400/600/900 在思考模型下会**静默降级**。`chat_json` 遇空 `content` 必须显式报错或自动放大 max_tokens | 豆包（已修）/ Claude 复核 | 用 pro 跑一次，不允许"无报错但结果变差" | 已复核 |
-| T25 | 成本一节改成「token 用量 × 你的模型单价」，不再绑死 DeepSeek 单一价格 | Claude | 给 token 区间（输入 1,300–2,000 / 输出 600–1,500）+ 换算公式 + ≥3 个模型的示例价 | 待做 |
+| T25 | 成本一节改成「token 用量 × 你的模型单价」，不再绑死 DeepSeek 单一价格 | Claude | 给 token 区间（输入 1,300–2,000 / 输出 600–1,500）+ 换算公式 + ≥3 个模型的示例价 | 已复核 |
 
 ## 进度同步机制
 
@@ -122,3 +122,4 @@
 - 飞书写入缺密钥和表结构，从未真实跑通
 - PWA 空壳（`sw.js` 42 字节）
 | 2026-11-10 | `11f55d9` | BYOK 复核（豆包）：15/15 实测通过。两处修正：①缓存盐原为 `base_url|model`，两人同模型会共用一个缓存 → 加 `key_fingerprint()`（sha256 前 8 位，不落原文）；②新增 `BYOK_ONLY` 开关，=1 时无 X-LLM-Key 直接 400，服务器 .env 的 key 绝不代跑；③默认模型 `deepseek-chat` 与 README 不一致且已弃用 → 改 `deepseek-v4-flash` | 通过 |
+| 2026-11-10 | 未提交 | 进度盘点（豆包）：核实 T14（LICENSE 为 MIT）、T15（legacy/ 含 Dify yml，README 已 0 处提 Dify）、T23（.env.example 与代码默认均为 v4-flash）、T25（README token 口径 10 处）→ 标已复核。当前 13/25 已复核，剩 12 条分三批：记忆 T8–T12、前端 T1–T4、部署 T16–T18 | 通过 |
