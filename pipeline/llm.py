@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import contextvars
+import hashlib
 import json
 import os
 import re
@@ -62,7 +63,7 @@ def _resolved() -> dict:
         c.get("model")
         or os.environ.get("LLM_MODEL")
         or os.environ.get("DEEPSEEK_MODEL")
-        or "deepseek-chat"
+        or "deepseek-v4-flash"   # 与 README 一致；deepseek-chat 官方已于 2026-07-24 弃用
     ).strip()
     api_key = (
         c.get("api_key")
@@ -78,10 +79,26 @@ def env_has_key() -> bool:
     return bool(os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY"))
 
 
+def key_fingerprint() -> str:
+    """当前 key 的指纹：只取 sha256 前 8 位，不可逆。
+
+    用途：① 缓存命名空间（多人共用一台服务时，不同人的 key 落在不同缓存）；
+    ② 批次 3 的每人每日调用上限按同一指纹统计。绝不落 key 原文。
+    """
+    key = _resolved()["api_key"]
+    if not key:
+        return "nokey"
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:8]
+
+
 def cache_salt() -> str:
-    """缓存命名空间：base_url + model。换模型/换厂商后旧缓存自动失效，不会串结果。"""
+    """缓存命名空间：base_url + model + 用户 key 指纹。
+
+    - 换模型/换厂商 → 盐变，旧缓存自动失效（不会"换了模型还是旧结果"）；
+    - 换人（不同 key）→ 盐也变，别人不会命中你的分析结果，反之亦然。
+    """
     c = _resolved()
-    return f"{c['base_url']}|{c['model']}"
+    return f"{c['base_url']}|{c['model']}|{key_fingerprint()}"
 
 
 def _thinking_param(base_url: str, model: str) -> dict:

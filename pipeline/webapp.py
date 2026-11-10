@@ -69,6 +69,11 @@ def _require_auth(token: str | None = Cookie(default=None, alias="pipeline_token
 
 _KEY_PLACEHOLDERS = ("your", "xxx", "placeholder", "example", "changeme")
 
+# 对外部署开关：BYOK_ONLY=1 时，服务端 .env 里的 key 一律不兜底，
+# 没带 X-LLM-Key 的请求直接 400。用来保证"别人用的一定是他自己的 key"，
+# 不会因为服务器上配了主人的 key 而被白用。本机自用不设这个开关。
+_BYOK_ONLY = os.environ.get("BYOK_ONLY", "").strip().lower() in ("1", "true", "yes", "on")
+
 
 def _validate_header_key(key: str | None) -> str | None:
     """校验请求头带来的 key：长度≥20 且不含占位词；格式不对直接 400，不拿去调 API 试错（那是白花钱）。"""
@@ -84,7 +89,11 @@ def _validate_header_key(key: str | None) -> str | None:
 
 
 def _resolve_creds(x_llm_key: str | None, x_llm_base_url: str | None, x_llm_model: str | None) -> dict | None:
-    """从请求头解析 BYOK 凭据：有 key → 返回凭据 dict；无 key → 检查 .env 是否兜底，都没有则 400。"""
+    """从请求头解析 BYOK 凭据。
+
+    有 key → 用他的 key；无 key → BYOK_ONLY 模式下直接 400（绝不用服务器 key 代跑），
+    否则若 .env 配了口令/自用 key 则回退（给本机自用留方便）。
+    """
     key = _validate_header_key(x_llm_key)
     if key:
         return {
@@ -92,6 +101,11 @@ def _resolve_creds(x_llm_key: str | None, x_llm_base_url: str | None, x_llm_mode
             "base_url": (x_llm_base_url or "").strip() or None,
             "model": (x_llm_model or "").strip() or None,
         }
+    if _BYOK_ONLY:
+        raise HTTPException(
+            status_code=400,
+            detail="本服务要求使用你自己的 API Key（不代付费用）。请点右上角「设置」填写后再分析。",
+        )
     if not llm.env_has_key():
         raise HTTPException(
             status_code=400,
