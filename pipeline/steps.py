@@ -194,6 +194,26 @@ def profile_extract(resume_text: str) -> dict:
     return result
 
 
+def jd_only(jd_text: str, position: str = "") -> dict:
+    """只解析 JD，不带候选人画像。给「JD 解析」入口用，一次调用，同步返回。"""
+    jd_text = trim_jd(jd_text)
+    key = _mkey("jdonly-v1\x00" + jd_text + "\x00" + (position or ""))
+    cached = _cache_get(key, "jdonly")
+    if cached is not None:
+        return cached
+
+    system = _fill(
+        _load_prompt("02b_jd_only.md"),
+        JD_TEXT=jd_text,
+        POSITION=position or "（JD 首行）",
+    )
+    data = llm.chat_json(system=system, user="", temperature=0, max_tokens=1200, step="02b_jd_only")
+    if "error" in data:
+        return data
+    _cache_put(key, "jdonly", data)
+    return data
+
+
 def jd_analysis(jd_text: str, profile: dict) -> dict:
     jd_text = trim_jd(jd_text)
     key = _mkey(jd_text + "\x00" + json.dumps(profile, ensure_ascii=False, sort_keys=True))

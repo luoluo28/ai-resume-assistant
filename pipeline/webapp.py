@@ -33,7 +33,7 @@ except ImportError as e:  # 友好降级：缺依赖给安装提示，而不是�
     )
     raise SystemExit(1)
 
-from . import advisor, advisor_guard, export, llm, steps, store
+from . import advisor, advisor_guard, export, llm, sources, steps, store
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 _PASSWORD = os.environ.get("WEB_PASSWORD", "")
@@ -301,6 +301,49 @@ def _load_owned_task(task_id: str, device_id: str, request: Request) -> dict:
     t = _load_task(task_id)
     _check_task_owner(t.get("device_id") or "local", device_id, request)
     return t
+
+
+@app.post("/api/jd_parse")
+def jd_parse(
+    jd_text: str = Form(""),
+    position: str = Form(""),
+    token: str | None = Cookie(default=None, alias="pipeline_token"),
+    x_llm_key: str | None = Header(default=None),
+    x_llm_base_url: str | None = Header(default=None),
+    x_llm_model: str | None = Header(default=None),
+    device: str | None = Cookie(default=None, alias="pipeline_device"),
+    response: Response = None,
+):
+    """只解析 JD：不需要简历，一次调用，同步返回（约 5–10 秒）。"""
+    _require_auth(token)
+    _ensure_device(device, response)
+    creds = _resolve_creds(x_llm_key, x_llm_base_url, x_llm_model)
+    if not (jd_text or "").strip():
+        raise HTTPException(status_code=400, detail="请先把岗位 JD 粘贴进来")
+    try:
+        if creds:
+            llm.set_request_credentials(
+                api_key=creds["api_key"], base_url=creds.get("base_url"), model=creds.get("model")
+            )
+        data = steps.jd_only(jd_text, position.strip())
+    finally:
+        if creds:
+            llm.clear_request_credentials()
+    if "error" in data:
+        raise HTTPException(status_code=502, detail="JD 解析失败：%s" % data["error"])
+    return data
+
+
+@app.post("/api/sources")
+def sources_api(payload: dict = Body(...), token: str | None = Cookie(default=None, alias="pipeline_token")):
+    """岗位搜集 L1：按关键词 + 城市生成各平台搜索链接（不抓取、不登录、不投递）。"""
+    _require_auth(token)
+    cats = [str(c).strip() for c in (payload.get("categories") or []) if str(c).strip()]
+    city = str(payload.get("city") or "").strip()
+    if not cats:
+        raise HTTPException(status_code=400, detail="请至少填一个岗位关键词")
+    links = sources.build(cats, city)
+    return {"categories": cats, "city": city, "links": links}
 
 
 @app.get("/api/task/{task_id}")

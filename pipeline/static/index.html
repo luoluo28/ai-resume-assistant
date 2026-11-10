@@ -7,390 +7,603 @@
 <meta name="theme-color" content="#0f766e">
 <title>AI简历助手</title>
 <style>
-  :root { --primary: #0f766e; --border: #e5e7eb; }
-  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-         max-width: 720px; margin: 0 auto; padding: 16px; line-height: 1.6; color: #1f2937; }
+  :root {
+    --primary: #0f766e; --primary-dark: #115e59; --border: #e5e7eb;
+    --text: #1f2937; --muted: #6b7280; --bg: #ffffff; --soft: #f9fafb;
+    --warn: #b45309; --fail: #b91c1c; --ok: #166534;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    max-width: 480px; margin: 0 auto; line-height: 1.6; color: var(--text);
+    background: var(--bg); -webkit-text-size-adjust: 100%;
+    padding-bottom: 84px; /* 给底部固定导航留位置，避免遮挡 */
+  }
   h1 { font-size: 20px; }
-  #status { color: #6b7280; font-size: 13px; margin-bottom: 14px; line-height: 1.5; }
-  label { display: block; margin: 14px 0 4px; font-weight: 600; }
-  textarea, input[type=text], input[type=password] { width: 100%; box-sizing: border-box;
-         padding: 8px; font-size: 15px; border: 1px solid #d1d5db; border-radius: 6px; }
-  textarea { min-height: 90px; }
-  .pick-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
-  .pick-btn { margin-top: 0; padding: 7px 14px; font-size: 14px; background: #fff;
-              color: var(--primary); border: 1px solid var(--primary); border-radius: 8px;
-              white-space: nowrap; flex: 0 0 auto; }
+  h2 { font-size: 16px; margin: 0 0 8px; }
+  h3 { font-size: 15px; margin: 14px 0 6px; }
+  header#topbar {
+    padding: 14px 16px 8px; background: var(--bg); position: sticky; top: 0; z-index: 5;
+    border-bottom: 1px solid var(--border);
+  }
+  header#topbar .brand { font-size: 17px; font-weight: 700; color: var(--primary); }
+  header#topbar .sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  main { padding: 14px 16px; }
+  label { display: block; margin: 16px 0 6px; font-weight: 600; font-size: 14px; }
+  textarea, input[type=text], input[type=password] {
+    width: 100%; padding: 10px; font-size: 15px; border: 1px solid #d1d5db;
+    border-radius: 8px; font-family: inherit; background: #fff;
+  }
+  textarea { min-height: 92px; resize: vertical; }
+  .pick-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .pick-btn {
+    padding: 0 14px; min-height: 44px; font-size: 14px; background: #fff;
+    color: var(--primary); border: 1px solid var(--primary); border-radius: 8px;
+    white-space: nowrap; flex: 0 0 auto;
+  }
   .hidden-file { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
-  .picked { font-size: 13px; color: var(--primary); margin-top: 0; flex: 1 1 auto; min-width: 0; }
-  button { margin-top: 16px; padding: 10px 20px; font-size: 16px; border: none;
-           border-radius: 8px; background: var(--primary); color: #fff; cursor: pointer; }
-  button.secondary { background: #6b7280; margin-left: 8px; }
-  button:disabled { background: #9ca3af; cursor: default; }
-  #progress { margin-top: 16px; color: var(--primary); font-weight: 600; }
-  .card { margin-top: 16px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; }
-  .card h2 { font-size: 16px; margin: 0 0 8px; }
-  .card h3 { font-size: 15px; margin: 12px 0 4px; }
-  .conclusion { font-size: 18px; font-weight: 700; }
-  .dims { color: #374151; font-size: 14px; margin: 4px 0; }
-  .locfail { color: #b91c1c; font-weight: 700; }
+  .picked { font-size: 13px; color: var(--primary); flex: 1 1 auto; min-width: 0;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 所有主按钮 ≥44px 高（T4 判据） */
+  button {
+    min-height: 46px; padding: 0 20px; font-size: 16px; border: none; border-radius: 10px;
+    background: var(--primary); color: #fff; cursor: pointer; font-family: inherit;
+  }
+  button:active { background: var(--primary-dark); }
+  button.secondary { background: #fff; color: var(--primary); border: 1px solid var(--primary); }
+  button.ghost { background: var(--soft); color: var(--text); border: 1px solid var(--border); }
+  button:disabled { background: #9ca3af; cursor: default; color: #fff; }
+  .btn-block { display: block; width: 100%; margin-top: 18px; }
+  .row { display: flex; gap: 10px; margin-top: 18px; }
+  .row > button { flex: 1 1 0; }
+  /* 首屏入口卡片 */
+  .entry {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+    padding: 14px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 12px;
+    background: #fff; min-height: 68px; cursor: pointer;
+  }
+  .entry:active { background: var(--soft); }
+  .entry .ico {
+    flex: 0 0 40px; width: 40px; height: 40px; border-radius: 10px; background: #ccfbf1;
+    color: var(--primary-dark); display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 700;
+  }
+  .entry .txt { flex: 1 1 auto; min-width: 0; }
+  .entry .t { font-size: 16px; font-weight: 700; }
+  .entry .s { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .entry .arrow { color: var(--muted); font-size: 18px; flex: 0 0 auto; }
+  .hero h1 { font-size: 22px; margin: 6px 0 6px; line-height: 1.4; }
+  .hero p.lead { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .card { margin-top: 14px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; }
+  .card.tight { padding: 12px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .big-score { font-size: 38px; font-weight: 800; line-height: 1.1; color: var(--primary); }
+  .conclusion { font-size: 18px; font-weight: 700; margin-top: 4px; }
+  .pill { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px;
+          background: var(--soft); color: var(--text); margin-right: 6px; margin-top: 6px; }
+  .pill.ok { background: #dcfce7; color: var(--ok); }
+  .pill.warn { background: #fef3c7; color: var(--warn); }
+  .pill.fail { background: #fee2e2; color: var(--fail); }
+  .bar-wrap { margin: 8px 0; }
+  .bar-label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 3px; }
+  .bar { height: 8px; background: #f3f4f6; border-radius: 6px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--primary); }
+  .kv { font-size: 14px; margin: 6px 0; }
+  ol, ul { margin: 6px 0; padding-left: 20px; }
+  li { margin: 4px 0; }
   .tag { display: inline-block; font-size: 12px; padding: 1px 6px; border-radius: 4px;
          background: #f3f4f6; color: #374151; margin-right: 4px; }
-  .tag.have { background: #dcfce7; color: #166534; }
-  .tag.partial { background: #fef3c7; color: #92400e; }
-  .tag.none { background: #fee2e2; color: #991b1b; }
+  .tag.have { background: #dcfce7; color: var(--ok); }
+  .tag.partial { background: #fef3c7; color: var(--warn); }
+  .tag.none { background: #fee2e2; color: var(--fail); }
   .tag.self_confirm { background: #e0e7ff; color: #3730a3; }
-  ol, ul { margin: 6px 0; padding-left: 18px; }
-  .muted { color: #6b7280; font-size: 13px; }
-  #login { max-width: 360px; margin: 40px auto; }
+  #progress { margin-top: 14px; color: var(--primary); font-weight: 600; font-size: 14px; }
+  .err { color: var(--fail); font-weight: 600; }
+  /* 底部固定导航（T4） */
+  nav#tabbar {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: 0;
+    width: 100%; max-width: 480px; display: flex; background: #fff;
+    border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom);
+    z-index: 10;
+  }
+  nav#tabbar button {
+    flex: 1 1 0; min-height: 56px; background: #fff; color: var(--muted);
+    border-radius: 0; font-size: 14px; font-weight: 600; border: none;
+  }
+  nav#tabbar button.active { color: var(--primary); }
+  #login { max-width: 360px; margin: 60px auto; padding: 0 16px; }
+  a.link { color: var(--primary); word-break: break-all; }
+  .ask-log { margin-top: 10px; }
+  .ask-item { margin: 8px 0; }
+  .ask-item .q { font-weight: 600; font-size: 14px; }
+  .ask-item .a { font-size: 14px; margin-top: 3px; white-space: pre-wrap; }
 </style>
 </head>
 <body>
 
 <div id="login" hidden>
   <h1>需要口令</h1>
-  <p class="muted">启动脚本窗口里打印的那串数字就是口令</p>
+  <p class="muted">启动脚本窗口里打印的那串就是口令</p>
   <input id="pw" type="password" placeholder="访问口令">
-  <button onclick="login()">进入</button>
+  <button class="btn-block" onclick="login()">进入</button>
 </div>
 
 <div id="app" hidden>
-  <h1>AI简历助手</h1>
-  <div id="status"></div>
-
-  <details style="margin:12px 0; padding:10px; border:1px solid var(--border); border-radius:8px;">
-    <summary style="cursor:pointer; font-weight:600;">设置（API Key / 模型）</summary>
-    <label>你的 API Key（只存在你本机浏览器，不上传保存）</label>
-    <input id="api_key" type="password" placeholder="sk-…" autocomplete="off">
-    <label>模型名（可选，不填用服务端 .env 里的）</label>
-    <input id="api_model" type="text" placeholder="deepseek-v4-flash">
-    <label>服务地址（可选，默认 DeepSeek）</label>
-    <input id="api_base" type="text" placeholder="https://api.deepseek.com">
-    <div style="margin-top:10px;">
-      <button class="secondary" style="margin-left:0;" onclick="saveSettings()">保存</button>
-      <button class="secondary" onclick="clearSettings()">清除本地 Key</button>
-    </div>
-    <p class="muted" id="key_hint"></p>
-  </details>
-
-  <div id="no_key_banner" class="card" style="display:none; background:#fef3c7;">
-    <b>还没配置 API Key</b>
-    <p class="muted">本工具不代付 API 费用。请在「设置」里填你自己的 key（DeepSeek 一把 key 单岗约 0.008 元），或让管理员在服务端 .env 里配好。</p>
-  </div>
-
-  <label>岗位名（可选，不给则从 JD 首行提取）</label>
-  <input id="position" type="text" placeholder="例如：后端开发工程师">
-
-  <label>JD：粘贴文本 或 选文件</label>
-  <textarea id="jd_text" placeholder="把岗位描述粘贴到这里"></textarea>
-  <div class="pick-row">
-    <button type="button" class="pick-btn" onclick="pick('jd_file')">选择 JD 文件</button>
-    <span class="picked" id="jd_picked">未选择</span>
-  </div>
-  <input id="jd_file" type="file" class="hidden-file" accept=".txt,.md,.pdf,.png,.jpg,.jpeg">
-
-  <label>简历：粘贴文本 或 选文件（手机上可直接选照片）</label>
-  <textarea id="resume_text" placeholder="简历文本，或选文件"></textarea>
-  <div class="pick-row">
-    <button type="button" class="pick-btn" onclick="pick('resume_file')">选择简历文件</button>
-    <span class="picked" id="resume_picked">未选择</span>
-  </div>
-  <input id="resume_file" type="file" class="hidden-file" accept="image/*,.txt,.md,.pdf">
-
-  <label>公司官网文本（可选，不填就跳过这一步、不花钱）</label>
-  <textarea id="company_text" placeholder="公司 about / 价值观页文本"></textarea>
-
-  <button id="btn_analyze" onclick="analyze()">开始分析</button>
-  <div id="progress"></div>
-  <div id="result"></div>
-
-  <details style="margin:16px 0; padding:10px; border:1px solid var(--border); border-radius:8px;">
-    <summary style="cursor:pointer; font-weight:600;" onclick="loadHistory()">我的记录</summary>
-    <div id="history_list" class="muted">点开后加载…</div>
-    <div id="history_detail"></div>
-  </details>
+  <header id="topbar">
+    <div class="brand">AI简历助手</div>
+    <div class="sub" id="topbar_sub">自己带 key，只花自己的钱</div>
+  </header>
+  <main id="main"></main>
+  <nav id="tabbar">
+    <button id="tab_home" onclick="go('home')">首页</button>
+    <button id="tab_history" onclick="go('history')">记录</button>
+    <button id="tab_settings" onclick="go('settings')">设置</button>
+  </nav>
 </div>
 
 <script>
 const STEP_NAMES = ["", "提取简历信息", "分析岗位需求", "企业价值观（无文本则跳过）", "生成投递建议"];
-let taskId = null;
-const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-// ---- BYOK：key 只存 localStorage，发请求时放 header，绝不进 URL / cookie / 服务端存储 ----
-const LS_KEY = "llm_settings";
+// 五个入口。primary 两个对应 PLAN 的「免费诊断简历 / 粘贴 JD 直接分析」
+const ENTRIES = [
+  { id: "diag", ico: "诊断", title: "简历诊断", sub: "简历 + JD，给分数、差距和该不该投", primary: true },
+  { id: "jd", ico: "JD", title: "JD 解析", sub: "只贴 JD，看它要什么、怎么准备", primary: true },
+  { id: "polish", ico: "精修", title: "简历精修", sub: "对标 JD 逐句改，只改有依据的" },
+  { id: "interview", ico: "演练", title: "面试演练", sub: "对着这个岗位，先自己答一遍" },
+  { id: "jobs", ico: "搜集", title: "岗位搜集", sub: "生成各平台搜索链接，不抓取不投递" },
+];
+
+let view = "home";
+let currentEntry = null;
+let taskId = null;
+let lastAdvice = null;
+let lastCoverage = null;
 let serverHasKey = true;
 
-function readSettings() {
-  try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); }
-  catch (e) { return {}; }
-}
+// ---------------- BYOK 设置 ----------------
+const LS_KEY = "llm_settings";
 
+function readSettings() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); } catch (e) { return {}; }
+}
 function llmHeaders() {
-  const s = readSettings();
-  const h = {};
+  const s = readSettings(), h = {};
   if (s.api_key) h["X-LLM-Key"] = s.api_key;
   if (s.model) h["X-LLM-Model"] = s.model;
   if (s.base_url) h["X-LLM-Base-URL"] = s.base_url;
   return h;
 }
-
-function updateKeyHint() {
-  const s = readSettings();
-  document.getElementById("key_hint").textContent = s.api_key
-    ? "已保存 Key（" + s.api_key.slice(0, 3) + "…，共 " + s.api_key.length + " 位）"
-    : "未填 Key，将使用服务端 .env 里的 key（若有）。";
+function hasKey() { return !!readSettings().api_key; }
+function updateSub() {
+  document.getElementById("topbar_sub").textContent = hasKey()
+    ? "用自己的 Key（只存在本机浏览器）" : "自己带 key，只花自己的钱";
 }
-
-function updateNoKeyBanner(v) {
-  serverHasKey = !!v;
-  const s = readSettings();
-  document.getElementById("no_key_banner").style.display = (!s.api_key && !serverHasKey) ? "block" : "none";
-}
-
-function loadSettings() {
-  const s = readSettings();
-  document.getElementById("api_key").value = s.api_key || "";
-  document.getElementById("api_model").value = s.model || "";
-  document.getElementById("api_base").value = s.base_url || "";
-  updateKeyHint();
-}
-
-function saveSettings() {
-  localStorage.setItem(LS_KEY, JSON.stringify({
-    api_key: document.getElementById("api_key").value.trim(),
-    model: document.getElementById("api_model").value.trim(),
-    base_url: document.getElementById("api_base").value.trim(),
-  }));
-  updateKeyHint();
-  updateNoKeyBanner(serverHasKey);
-}
-
-function clearSettings() {
-  localStorage.removeItem(LS_KEY);
-  document.getElementById("api_key").value = "";
-  document.getElementById("api_model").value = "";
-  document.getElementById("api_base").value = "";
-  updateKeyHint();
-  updateNoKeyBanner(serverHasKey);
-}
-
-function dimsText(scores) {
-  const labels = { technical: "技术", experience: "经验", behavioral: "软实力", career: "职业" };
-  if (!scores) return "";
-  return Object.entries(labels).map(([k, v]) => v + " " + (scores[k] ?? "?")).join(" · ");
-}
-
 async function apiError(r, fallback) {
-  try {
-    const j = await r.json();
-    return j.detail || fallback;
-  } catch (e) {
-    return fallback;
+  try { const j = await r.json(); return j.detail || fallback; } catch (e) { return fallback; }
+}
+
+// ---------------- 路由 ----------------
+function go(v, entryId) {
+  view = v;
+  if (entryId) currentEntry = entryId;
+  document.querySelectorAll("nav#tabbar button").forEach(b => b.classList.remove("active"));
+  const map = { home: "tab_home", history: "tab_history", settings: "tab_settings" };
+  if (map[v]) document.getElementById(map[v]).classList.add("active");
+  if (v === "form") document.getElementById("tab_home").classList.add("active");
+  if (v === "result") document.getElementById("tab_home").classList.add("active");
+  render();
+}
+
+function render() {
+  const m = document.getElementById("main");
+  if (view === "home") m.innerHTML = viewHome();
+  else if (view === "form") m.innerHTML = viewForm(currentEntry);
+  else if (view === "result") m.innerHTML = viewResult();
+  else if (view === "history") { m.innerHTML = viewHistoryShell(); loadHistory(); }
+  else if (view === "settings") m.innerHTML = viewSettings();
+  bindHandlers();
+  window.scrollTo(0, 0);
+}
+
+// 首屏：一句价值主张 + 五个入口（没有空输入框）
+function viewHome() {
+  return `<div class="hero">
+    <h1>投之前，先知道自己差多少</h1>
+    <p class="lead">把简历和岗位 JD 放进来，得到分数、差距和一周内能补的证据。不做自动投递，不碰你的账号。</p>
+  </div>
+  ${ENTRIES.map(e => `
+    <button class="entry" onclick="go('form','${e.id}')">
+      <div class="ico">${e.ico}</div>
+      <div class="txt"><div class="t">${e.title}</div><div class="s">${e.sub}</div></div>
+      <div class="arrow">›</div>
+    </button>`).join("")}
+  <p class="muted" style="margin-top:14px;">每个入口只用得上它需要的输入，其余不用填。</p>`;
+}
+
+// 每个入口只出现本功能相关输入
+function viewForm(id) {
+  const e = ENTRIES.find(x => x.id === id) || ENTRIES[0];
+  let fields = "";
+  if (id === "jd") {
+    fields = `
+      <label>岗位名（可选）</label>
+      <input id="f_position" type="text" placeholder="例如：AI应用开发实习生">
+      <label>岗位 JD</label>
+      ${jdInputs()}`;
+  } else if (id === "jobs") {
+    fields = `
+      <label>岗位关键词（多个用逗号隔开）</label>
+      <input id="f_kw" type="text" placeholder="例如：AI应用开发实习生，Python">
+      <label>城市（可选）</label>
+      <input id="f_city" type="text" placeholder="例如：北京">
+      <p class="muted" style="margin-top:8px;">只生成各平台的搜索链接，不抓取、不登录、不投递。</p>`;
+  } else {
+    fields = `
+      <label>岗位名（可选）</label>
+      <input id="f_position" type="text" placeholder="例如：AI应用开发实习生">
+      <label>岗位 JD</label>
+      ${jdInputs()}
+      <label>简历（粘贴文本或选文件，手机可直接选照片）</label>
+      <textarea id="f_resume" placeholder="简历文本，或选文件">${readDraft(id, "resume")}</textarea>
+      <div class="pick-row">
+        <button type="button" class="pick-btn" onclick="pick('f_resume_file')">选择简历文件</button>
+        <span class="picked" id="resume_picked">未选择</span>
+      </div>
+      <input id="f_resume_file" type="file" class="hidden-file" accept="image/*,.txt,.md,.pdf">
+      <label>公司官网文本（可选，不填就跳过这一步、不花钱）</label>
+      <textarea id="f_company" placeholder="公司 about / 价值观页文本"></textarea>`;
   }
+  return `<button class="ghost" style="min-height:44px;padding:0 12px;font-size:14px;" onclick="go('home')">‹ 返回</button>
+    <h1 style="margin-top:14px;">${e.title}</h1>
+    <p class="muted">${e.sub}</p>
+    ${fields}
+    <button class="btn-block" id="btn_run" onclick="runEntry('${id}')">${btnLabel(id)}</button>
+    <div id="progress"></div>`;
 }
 
-function pick(inputId) {
-  document.getElementById(inputId).click();
+function jdInputs() {
+  return `<textarea id="f_jd" placeholder="把岗位描述粘贴到这里"></textarea>
+    <div class="pick-row">
+      <button type="button" class="pick-btn" onclick="pick('f_jd_file')">选择 JD 文件</button>
+      <span class="picked" id="jd_picked">未选择</span>
+    </div>
+    <input id="f_jd_file" type="file" class="hidden-file" accept=".txt,.md,.pdf,.png,.jpg,.jpeg">`;
 }
 
-function bindPick(inputId, labelId, textareaId) {
-  document.getElementById(inputId).addEventListener("change", ev => {
-    const f = ev.target.files[0];
-    const lab = document.getElementById(labelId);
-    const ta = textareaId ? document.getElementById(textareaId) : null;
-    if (!f) { lab.textContent = "未选择"; return; }
-    lab.textContent = "已选择：" + f.name;
-    // 纯文本文件直接读进输入框，避免"选完文件输入框还是空的"
-    if (ta && /\.(txt|md)$/i.test(f.name)) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const text = String(reader.result || "").trim();
-        if (text) { ta.value = text; lab.textContent = "已选择：" + f.name + "（内容已填入上方框）"; }
-      };
-      reader.readAsText(f, "UTF-8");
-    }
-  });
+function btnLabel(id) {
+  return { diag: "开始诊断", jd: "解析这个 JD", polish: "生成精修建议", interview: "进入演练", jobs: "生成搜索链接" }[id] || "开始";
 }
 
-async function loadStatus() {
+// 草稿：切页面时别丢已填的内容
+function saveDraft(id, resume) {
   try {
-    const r = await fetch("/api/status");
-    if (!r.ok) return;
-    const s = await r.json();
-    document.getElementById("status").textContent =
-      "上次岗位：" + (s.position || "无") + " ｜ 上次运行：" + (s.last_run || "无");
+    sessionStorage.setItem("draft_" + id, JSON.stringify({
+      jd: (document.getElementById("f_jd") || {}).value || "",
+      resume: resume != null ? resume : ((document.getElementById("f_resume") || {}).value || ""),
+    }));
   } catch (e) {}
 }
-
-async function login() {
-  const fd = new FormData();
-  fd.append("password", document.getElementById("pw").value);
-  const r = await fetch("/api/login", { method: "POST", body: fd });
-  if (r.ok) { showApp(); loadStatus(); }
-  else { alert(await apiError(r, "口令错误")); }
+function readDraft(id, what) {
+  try {
+    const d = JSON.parse(sessionStorage.getItem("draft_" + id) || "{}");
+    return d[what] || "";
+  } catch (e) { return ""; }
+}
+function readJd() {
+  const ta = document.getElementById("f_jd");
+  return ta ? ta.value : "";
 }
 
-function showApp() {
-  document.getElementById("login").hidden = true;
-  document.getElementById("app").hidden = false;
+// ---------------- 四个入口的执行 ----------------
+async function runEntry(id) {
+  if (id === "jobs") return runJobs();
+  if (id === "jd") return runJdOnly();
+  if (id !== "diag") saveDraft(id);
+  return runAnalyze(id);
 }
 
-function showLogin() {
-  document.getElementById("app").hidden = true;
-  document.getElementById("login").hidden = false;
-}
-
-async function analyze() {
-  const fd = new FormData();
-  fd.append("position", document.getElementById("position").value);
-  fd.append("jd_text", document.getElementById("jd_text").value);
-  fd.append("resume_text", document.getElementById("resume_text").value);
-  fd.append("company_text", document.getElementById("company_text").value);
-  const jdFile = document.getElementById("jd_file").files[0];
-  const resumeFile = document.getElementById("resume_file").files[0];
-  if (jdFile) fd.append("jd_file", jdFile);
-  if (resumeFile) fd.append("resume_file", resumeFile);
-
-  const btn = document.getElementById("btn_analyze");
+async function runJobs() {
+  const kw = document.getElementById("f_kw").value.split(/[,，、]/).map(s => s.trim()).filter(Boolean);
+  const city = document.getElementById("f_city").value.trim();
+  if (!kw.length) { alert("请至少填一个岗位关键词"); return; }
+  const btn = document.getElementById("btn_run");
   btn.disabled = true;
-  document.getElementById("result").innerHTML = "";
+  try {
+    const r = await fetch("/api/sources", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ categories: kw, city }),
+    });
+    if (r.status === 401) { showLogin(); return; }
+    if (!r.ok) { alert(await apiError(r, "生成失败")); return; }
+    const d = await r.json();
+    document.getElementById("main").innerHTML = viewJobsResult(d, kw, city);
+  } finally { btn.disabled = false; }
+}
+
+function viewJobsResult(d, kw, city) {
+  const groups = kw.map(c => {
+    const ls = d.links.filter(l => l.category === c);
+    return `<div class="card"><h2>${esc(c)}</h2>` + ls.map(l => `
+      <div style="margin:10px 0;">
+        <a class="link" href="${esc(l.url)}" target="_blank" rel="noreferrer">${esc(l.platform)}</a>
+        <div class="muted">${esc(l.why)}</div>
+      </div>`).join("") + `</div>`;
+  }).join("");
+  return `<button class="ghost" style="min-height:44px;padding:0 12px;font-size:14px;" onclick="go('form','jobs')">‹ 返回</button>
+    <h1 style="margin-top:14px;">搜索链接</h1>
+    <p class="muted">${esc(city || "不限城市")} · 点开挑岗位，把 JD 复制回来走「简历诊断」。</p>
+    ${groups}
+    <p class="muted" style="margin-top:14px;">链接结构可能随平台改版失效，打不开就退回平台首页手动搜关键词。</p>`;
+}
+
+async function runJdOnly() {
+  const jd = readJd().trim();
+  const position = (document.getElementById("f_position") || {}).value || "";
+  if (!jd) { alert("请先粘贴岗位 JD"); return; }
+  const btn = document.getElementById("btn_run");
+  const prog = document.getElementById("progress");
+  btn.disabled = true;
+  prog.textContent = "正在解析，约 5–10 秒…";
+  try {
+    const fd = new FormData();
+    fd.append("jd_text", jd);
+    fd.append("position", position);
+    const r = await fetch("/api/jd_parse", { method: "POST", body: fd, headers: llmHeaders() });
+    if (r.status === 401) { showLogin(); return; }
+    if (!r.ok) { prog.innerHTML = '<span class="err">' + esc(await apiError(r, "解析失败")) + "</span>"; return; }
+    const d = await r.json();
+    prog.textContent = "";
+    document.getElementById("main").innerHTML = viewJdResult(d);
+  } finally { btn.disabled = false; }
+}
+
+function viewJdResult(d) {
+  const list = (arr) => (arr && arr.length) ? "<ul>" + arr.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>"
+                                            : '<p class="muted">JD 里没写这部分</p>';
+  return `<button class="ghost" style="min-height:44px;padding:0 12px;font-size:14px;" onclick="go('form','jd')">‹ 返回</button>
+    <h1 style="margin-top:14px;">${esc(d.position || "这个岗位")}</h1>
+    <p class="muted">${esc(d.summary || "")}</p>
+    <div class="card"><h2>硬门槛</h2>${list(d.must_have)}</div>
+    <div class="card"><h2>加分项</h2>${list(d.nice_to_have)}</div>
+    <div class="card"><h2>关键词</h2>${(d.keywords || []).map(k => '<span class="pill">' + esc(k) + "</span>").join("") || '<p class="muted">无</p>'}
+      <p class="muted" style="margin-top:10px;">简历和面试里该出现的词，只会从 JD 原文里取。</p></div>
+    <div class="card"><h2>面试前准备什么</h2>${list(d.how_to_prepare)}</div>
+    <div class="card"><h2>简历该突出什么</h2>${list(d.resume_hint)}</div>
+    ${(d.red_flags || []).length ? '<div class="card"><h2>值得警惕</h2>' + list(d.red_flags) + "</div>" : ""}
+    <button class="btn-block secondary" onclick="go('form','diag')">带上我的简历，看能不能投</button>`;
+}
+
+async function runAnalyze(id) {
+  const jd = readJd().trim();
+  const resumeText = (document.getElementById("f_resume") || {}).value || "";
+  const position = (document.getElementById("f_position") || {}).value || "";
+  const company = (document.getElementById("f_company") || {}).value || "";
+  const jdFile = (document.getElementById("f_jd_file") || {}).files;
+  const resumeFile = (document.getElementById("f_resume_file") || {}).files;
+  if (!jd && !(jdFile && jdFile[0])) { alert("请先粘贴岗位 JD"); return; }
+  if (!resumeText.trim() && !(resumeFile && resumeFile[0])) { alert("请先放简历（粘贴或选文件）"); return; }
+
+  const fd = new FormData();
+  fd.append("position", position);
+  fd.append("jd_text", jd);
+  fd.append("resume_text", resumeText);
+  fd.append("company_text", company);
+  if (jdFile && jdFile[0]) fd.append("jd_file", jdFile[0]);
+  if (resumeFile && resumeFile[0]) fd.append("resume_file", resumeFile[0]);
+
+  const btn = document.getElementById("btn_run");
+  const prog = document.getElementById("progress");
+  btn.disabled = true;
+  prog.textContent = "提交中…";
   try {
     const r = await fetch("/api/analyze", { method: "POST", body: fd, headers: llmHeaders() });
     if (r.status === 401) { showLogin(); return; }
-    if (!r.ok) { alert(await apiError(r, "提交失败")); return; }
-    const data = await r.json();
-    taskId = data.task_id;
-    await poll();
-  } finally {
-    btn.disabled = false;
-  }
+    if (!r.ok) { prog.innerHTML = '<span class="err">' + esc(await apiError(r, "提交失败")) + "</span>"; return; }
+    taskId = (await r.json()).task_id;
+    await poll(id);
+  } finally { btn.disabled = false; }
 }
 
-async function poll() {
+async function poll(mode) {
+  const prog = document.getElementById("progress");
   while (true) {
     const r = await fetch("/api/task/" + taskId);
     if (r.status === 401) { showLogin(); return; }
-    if (!r.ok) { document.getElementById("progress").textContent = await apiError(r, "任务查不到"); return; }
+    if (!r.ok) { prog.innerHTML = '<span class="err">' + esc(await apiError(r, "任务查不到")) + "</span>"; return; }
     const s = await r.json();
-    document.getElementById("progress").textContent =
-      "第 " + s.step + "/4 步：" + (STEP_NAMES[s.step] || "") + "（" + s.elapsed + "s）";
-    if (s.status === "done") { document.getElementById("progress").textContent = "分析完成"; await showResult(); return; }
+    prog.textContent = "第 " + s.step + "/4 步：" + (STEP_NAMES[s.step] || "") + "（" + s.elapsed + "s）";
+    if (s.status === "done") {
+      prog.textContent = "";
+      await showResult(mode);
+      return;
+    }
     if (s.status === "error") {
-      document.getElementById("progress").textContent = "出错：" + (s.error || "未知错误");
+      prog.innerHTML = '<span class="err">出错：' + esc(s.error || "未知错误") + "</span>";
       return;
     }
     await new Promise(res => setTimeout(res, 800));
   }
 }
 
-async function showResult() {
+async function showResult(mode) {
   const r = await fetch("/api/task/" + taskId + "/result");
   if (!r.ok) { alert(await apiError(r, "结果还没准备好")); return; }
   const { advice, coverage } = await r.json();
-  const locFail = advice.location_verdict === "FAIL"
-    ? '<span class="locfail"> 地点 FAIL，已一票否决</span>' : "";
-  const scoreReasons = advice.score_reasons || {};
-  const dimLabelsFull = { technical: "技术", experience: "经验", behavioral: "软实力", career: "职业" };
-  const reasonLines = Object.keys(dimLabelsFull)
-    .filter(k => scoreReasons[k])
-    .map(k => '<div class="dims"><b>' + dimLabelsFull[k] + " " + ((advice.scores || {})[k] ?? "?")
-      + "：</b>" + esc(scoreReasons[k]) + "</div>").join("");
-  const locNote = advice.location_note
-    ? '<p class="dims"><b>地点说明：</b>' + esc(advice.location_note) + "</p>" : "";
-  let html = '<div class="card"><div class="conclusion">' + esc(advice.conclusion)
-    + (advice.score ? "（匹配度 " + esc(advice.score) + "%）" : "") + locFail + "</div>"
-    + "<p><b>岗位：</b>" + esc(advice.position) + "</p>"
-    + "<p><b>分档：</b>" + esc(advice.verdict) + "  <b>地点：</b>" + esc(advice.location_verdict) + "</p>"
-    + '<p class="dims"><b>四维：</b>' + dimsText(advice.scores) + "</p>"
-    + reasonLines + locNote
-    + "<h2>理由</h2><ol>" + (advice.reasons || []).map(x => "<li>" + esc(x) + "</li>").join("") + "</ol>"
-    + "<h2>差什么</h2><ul>" + (advice.gaps || []).map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>"
-    + "<h2>怎么补</h2><p>" + esc(advice.advice) + "</p>"
-    + "<h2>打招呼第一句</h2><p>" + esc(advice.opening_line) + "</p>"
-    + (advice.note ? "<p><small>" + esc(advice.note) + "</small></p>" : "")
-    + '<button onclick="exportFile(\'xlsx\')">导出 Excel</button>'
-    + '<button class="secondary" onclick="exportFile(\'pdf\')">导出 PDF</button></div>';
-  if (coverage) {
-    html += '<div class="card"><h2>关键词覆盖率 ' + esc(coverage.coverage) + "</h2>"
-      + "<p><b>命中：</b>" + esc((coverage.matched || []).join("、")) + "</p>"
-      + "<p><b>缺失：</b>" + esc((coverage.missing || []).join("、")) + "</p></div>";
-  }
-  html += '<div class="card"><h2>下一步：简历顾问</h2>'
-    + '<p class="muted">对标 JD 改简历、排项目、生成面试追问树。只多花 1 次调用，同样的输入第二次不重复花钱。</p>'
-    + '<button id="btn_advisor" onclick="runAdvisor()">生成简历顾问</button>'
-    + '<div id="advisor_out"></div></div>';
-  document.getElementById("result").innerHTML = html;
-  loadStatus();
+  lastAdvice = advice;
+  lastCoverage = coverage;
+  go("result");
+  // 精修入口：出结果后自动跑顾问
+  if (mode === "polish") runAdvisor(true);
 }
 
-async function runAdvisor() {
+// ---------------- 结果页：卡片流（T3） ----------------
+function viewResult() {
+  const a = lastAdvice;
+  if (!a) return '<p class="muted">没有结果</p>';
+  const dimLabels = { technical: "技术", experience: "经验", behavioral: "软实力", career: "职业" };
+  const sc = a.scores || {};
+  const reasons = a.score_reasons || {};
+  const locFail = a.location_verdict === "FAIL";
+  const locPill = locFail ? "fail" : (a.location_verdict === "FLAG" ? "warn" : "");
+  const verdictCls = /Strong/i.test(a.verdict) ? "ok" : /Good/i.test(a.verdict) ? "ok" : /Moderate/i.test(a.verdict) ? "warn" : "fail";
+
+  // 卡片 1：一屏内看到结论和分数
+  let h = `<button class="ghost" style="min-height:44px;padding:0 12px;font-size:14px;" onclick="go('home')">‹ 首页</button>
+    <div class="card" style="margin-top:14px;">
+      <div class="muted">${esc(a.position || "岗位")}</div>
+      <div style="display:flex;align-items:baseline;gap:10px;">
+        <span class="big-score">${esc(a.score ?? "?")}</span>
+        <span class="muted">分</span>
+      </div>
+      <div class="conclusion">${esc(a.conclusion || "")}</div>
+      <div>
+        <span class="pill ${verdictCls}">${esc(a.verdict || "")}</span>
+        <span class="pill ${locPill}">地点 ${esc(a.location_verdict || "")}</span>
+      </div>
+      ${locFail ? '<p class="err" style="margin-top:8px;">地点判定 FAIL，已一票否决</p>' : ""}
+      ${a.location_note ? '<p class="muted" style="margin-top:8px;">地点说明：' + esc(a.location_note) + "</p>" : ""}
+    </div>`;
+
+  // 卡片 2：四维 + 依据
+  h += `<div class="card"><h2>四维打分</h2>`;
+  Object.entries(dimLabels).forEach(([k, label]) => {
+    const v = Number(sc[k] ?? 0);
+    h += `<div class="bar-wrap">
+      <div class="bar-label"><span>${label}</span><span>${esc(sc[k] ?? "?")}</span></div>
+      <div class="bar"><i style="width:${Math.max(0, Math.min(100, v * 10))}%"></i></div>
+      ${reasons[k] ? '<div class="muted" style="margin-top:3px;">' + esc(reasons[k]) + "</div>" : ""}
+    </div>`;
+  });
+  h += `</div>`;
+
+  // 卡片 3：理由
+  if ((a.reasons || []).length) {
+    h += `<div class="card"><h2>为什么是这个结论</h2><ol>` +
+      a.reasons.map(x => "<li>" + esc(x) + "</li>").join("") + "</ol></div>";
+  }
+
+  // 卡片 4：缺口
+  if ((a.gaps || []).length) {
+    h += `<div class="card"><h2>差什么</h2><ul>` +
+      a.gaps.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul></div>";
+  }
+
+  // 卡片 5：怎么补 + 打招呼
+  h += `<div class="card"><h2>怎么补</h2><p>${esc(a.advice || "")}</p>
+    ${a.opening_line ? '<h3>打招呼第一句</h3><p>' + esc(a.opening_line) + "</p>" : ""}
+    ${a.note ? '<p class="muted">' + esc(a.note) + "</p>" : ""}</div>`;
+
+  // 卡片 6：覆盖率
+  if (lastCoverage) {
+    h += `<div class="card tight"><h2>关键词覆盖率 ${esc(lastCoverage.coverage ?? "")}</h2>
+      <p class="muted">命中：${esc((lastCoverage.matched || []).join("、") || "无")}</p>
+      <p class="muted">缺失：${esc((lastCoverage.missing || []).join("、") || "无")}</p></div>`;
+  }
+
+  // 卡片 7：深度建议（一周证据）
+  h += `<div class="card"><h2>一周内能补的证据</h2>
+    <p class="muted">对标 JD 逐句改简历、排项目叙事、生成面试追问树。多花 1 次调用；同样的输入第二次不重复花钱。</p>
+    <button class="btn-block secondary" id="btn_advisor" onclick="runAdvisor()">生成精修与证据清单</button>
+    <div id="advisor_out"></div></div>`;
+
+  // 卡片 8：追问
+  h += `<div class="card"><h2>还有问题？</h2>
+    <p class="muted">接着问这个岗位的事，它会带上上面的结论回答，不会把整份简历再发一遍。</p>
+    <textarea id="ask_q" placeholder="例如：我这周最该补哪一项？"></textarea>
+    <button class="btn-block secondary" id="btn_ask" onclick="askOnce()">问</button>
+    <div id="ask_log" class="ask-log"></div></div>`;
+
+  // 导出
+  h += `<div class="row">
+    <button class="ghost" onclick="exportFile('xlsx')">导出 Excel</button>
+    <button class="ghost" onclick="exportFile('pdf')">导出 PDF</button>
+  </div>`;
+  return h;
+}
+
+async function askOnce() {
+  const q = document.getElementById("ask_q").value.trim();
+  if (!q) { alert("先写一个问题"); return; }
+  const btn = document.getElementById("btn_ask");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/task/" + taskId + "/ask", {
+      method: "POST", headers: { "Content-Type": "application/json", ...llmHeaders() },
+      body: JSON.stringify({ question: q }),
+    });
+    if (r.status === 401) { showLogin(); return; }
+    const log = document.getElementById("ask_log");
+    if (!r.ok) { log.innerHTML += '<p class="err">' + esc(await apiError(r, "追问失败")) + "</p>"; return; }
+    const d = await r.json();
+    document.getElementById("ask_q").value = "";
+    log.innerHTML += `<div class="ask-item"><div class="q">${esc(q)}</div><div class="a">${esc(d.answer || "")}</div></div>`;
+  } finally { btn.disabled = false; }
+}
+
+async function runAdvisor(auto) {
   const btn = document.getElementById("btn_advisor");
   const out = document.getElementById("advisor_out");
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
   out.innerHTML = '<p class="muted">正在生成，通常 20–40 秒…</p>';
   try {
     const r = await fetch("/api/task/" + taskId + "/advisor", { method: "POST", headers: llmHeaders() });
     if (r.status === 401) { showLogin(); return; }
-    if (!r.ok) { out.innerHTML = '<p class="locfail">' + esc(await apiError(r, "生成失败")) + "</p>"; return; }
+    if (!r.ok) { out.innerHTML = '<p class="err">' + esc(await apiError(r, "生成失败")) + "</p>"; return; }
     const { advisor } = await r.json();
     out.innerHTML = renderAdvisor(advisor);
-  } finally {
-    btn.disabled = false;
-  }
+    if (btn) btn.style.display = "none";
+  } finally { if (btn) btn.disabled = false; }
 }
 
 function renderAdvisor(a) {
   const verdictTag = v => '<span class="tag ' + esc(v) + '">' + esc(v) + "</span>";
   let h = "";
-
   if ((a.alignments || []).length) {
     h += "<h3>逐条对齐 JD</h3><ul>";
     a.alignments.forEach(x => {
-      h += "<li>" + verdictTag(x.verdict) + esc(x.jd_item)
-        + (x.evidence ? '<div class="muted">证据：' + esc(x.evidence) + "</div>" : "");
+      h += "<li>" + verdictTag(x.verdict) + esc(x.jd_item) +
+        (x.evidence ? '<div class="muted">证据：' + esc(x.evidence) + "</div>" : "") + "</li>";
     });
     h += "</ul>";
   }
-
   if ((a.project_blocks || []).length) {
     h += "<h3>项目块（可直接改进简历）</h3>";
     a.project_blocks.forEach(b => {
-      h += '<div class="card"><b>' + esc(b.name || b.project) + "</b>";
+      h += '<div class="card tight"><b>' + esc(b.name || b.project) + "</b>";
       [["one_liner", "做什么"], ["role", "我的角色"], ["decision", "关键决策"],
        ["implementation", "关键实现"], ["deliverable", "交付物"]].forEach(([k, label]) => {
-        if (b[k]) h += "<div><b>" + label + "：</b>" + esc(b[k]) + "</div>";
+        if (b[k]) h += "<div class='kv'><b>" + label + "：</b>" + esc(b[k]) + "</div>";
       });
       h += "</div>";
     });
   }
-
   if ((a.rewrites || []).length) {
     h += "<h3>改写对照</h3>";
     a.rewrites.forEach(r => {
-      h += "<div><b>原句：</b>" + esc(r.before) + "<br><b>改后：</b>" + esc(r.after)
-        + (r.risk ? '<div class="muted">可能追问：' + esc(r.risk) + "</div>" : "") + "</div>";
+      h += '<div class="kv"><b>原句：</b>' + esc(r.before) + "<br><b>改后：</b>" + esc(r.after) +
+        (r.risk ? '<div class="muted">可能追问：' + esc(r.risk) + "</div>" : "") + "</div>";
     });
   }
-
   if ((a.evidence_plan || []).length) {
     h += "<h3>一周内能补的证据</h3><ul>";
     a.evidence_plan.forEach(e => {
-      h += "<li><b>缺：</b>" + esc(e.gap) + "<br>交付：" + esc(e.deliverable)
-        + (e.acceptance ? "<br>验收：" + esc(e.acceptance) : "")
-        + (e.resume_line ? '<br><span class="muted">补完可写：' + esc(e.resume_line) + "</span>" : "") + "</li>";
+      h += "<li><b>缺：</b>" + esc(e.gap) + "<br>交付：" + esc(e.deliverable) +
+        (e.acceptance ? "<br>验收：" + esc(e.acceptance) : "") +
+        (e.resume_line ? '<br><span class="muted">补完可写：' + esc(e.resume_line) + "</span>" : "") + "</li>";
     });
     h += "</ul>";
   }
-
   if ((a.interview_probe || []).length) {
     h += "<h3>面试拷问自检</h3><ul>";
     a.interview_probe.forEach(p => {
-      h += "<li>" + verdictTag(p.can_answer === "yes" ? "have" : p.can_answer === "partial" ? "partial" : "none")
-        + "<b>" + esc(p.keyword) + "：</b>" + esc(p.question)
-        + (p.advice ? '<div class="muted">' + esc(p.advice) + "</div>" : "") + "</li>";
+      h += "<li>" + verdictTag(p.can_answer === "yes" ? "have" : p.can_answer === "partial" ? "partial" : "none") +
+        "<b>" + esc(p.keyword) + "：</b>" + esc(p.question) +
+        (p.advice ? '<div class="muted">' + esc(p.advice) + "</div>" : "") + "</li>";
     });
     h += "</ul>";
   }
-
   const tree = a.interview_tree;
   if (tree) {
     const items = Array.isArray(tree) ? tree : [tree];
@@ -400,25 +613,23 @@ function renderAdvisor(a) {
       h += "<div><b>" + esc(t.project) + "</b>";
       (t.layers || []).forEach(l => {
         if (!l || typeof l !== "object") return;
-        h += '<div style="margin-left:' + ((Number(l.level) || 1) - 1) * 12 + 'px">'
-          + "<b>L" + esc(l.level) + "：</b>" + esc(l.question)
-          + (l.readiness ? ' <span class="muted">（' + esc(l.readiness) + "）</span>" : "")
-          + "<ul>" + (l.answer_points || []).map(x => "<li>" + esc(x) + "</li>").join("") + "</ul></div>";
+        h += '<div style="margin-left:' + ((Number(l.level) || 1) - 1) * 12 + 'px">' +
+          "<b>L" + esc(l.level) + "：</b>" + esc(l.question) +
+          (l.readiness ? ' <span class="muted">（' + esc(l.readiness) + "）</span>" : "") +
+          "<ul>" + (l.answer_points || []).map(x => "<li>" + esc(x) + "</li>").join("") + "</ul></div>";
       });
       h += "</div>";
     });
   }
-
   if ((a.hooks || []).length) {
     h += "<h3>可埋的钩子</h3><ul>";
     a.hooks.forEach(x => {
-      h += "<li><b>简历里写：</b>" + esc(x.resume_line)
-        + '<div class="muted">会引出：' + esc(x.expected_question)
-        + (x.must_be_true_fact ? "（依据事实：" + esc(x.must_be_true_fact) + "）" : "") + "</div></li>";
+      h += "<li><b>简历里写：</b>" + esc(x.resume_line) +
+        '<div class="muted">会引出：' + esc(x.expected_question) +
+        (x.must_be_true_fact ? "（依据事实：" + esc(x.must_be_true_fact) + "）" : "") + "</div></li>";
     });
     h += "</ul>";
   }
-
   if ((a.missing_material || []).length) {
     h += "<h3>补料清单</h3><ul>";
     a.missing_material.forEach(m => {
@@ -426,7 +637,6 @@ function renderAdvisor(a) {
     });
     h += "</ul>";
   }
-
   const g = a._guard || {};
   if (g.dropped_count) {
     h += '<p class="muted">合规闸门拦掉了 ' + g.dropped_count + " 条没有原文依据的内容（防止编造）。</p>";
@@ -443,28 +653,31 @@ async function exportFile(format, filename) {
   a.href = URL.createObjectURL(blob);
   a.download = filename || ("投递建议." + format);
   a.click();
+  URL.revokeObjectURL(a.href);
 }
 
-bindPick("jd_file", "jd_picked", "jd_text");
-bindPick("resume_file", "resume_picked", "resume_text");
+// ---------------- 记录 ----------------
+function viewHistoryShell() {
+  return `<h1>我的记录</h1><p class="muted">只显示这台设备自己的分析。</p>
+    <div id="history_list" class="muted">加载中…</div><div id="history_detail"></div>`;
+}
 
-let historyLoaded = false;
 async function loadHistory() {
-  if (historyLoaded) return;
   const el = document.getElementById("history_list");
-  el.textContent = "加载中…";
+  if (!el) return;
   try {
     const r = await fetch("/api/history?limit=20&offset=0");
     if (!r.ok) { el.textContent = "加载失败"; return; }
     const { history } = await r.json();
-    historyLoaded = true;
-    if (!history || !history.length) { el.textContent = "还没有记录。"; return; }
-    el.innerHTML = history.map(h =>
-      '<div style="padding:6px 0; border-bottom:1px solid var(--border); cursor:pointer;" onclick="openHistory(\'' + h.session_id + '\')">'
-      + "<b>" + esc(h.position || "未命名") + "</b> "
-      + '<span class="muted">' + esc(h.score ?? "?") + " 分 · " + esc(h.verdict || "") + " · " + esc(h.created_at || "") + "</span>"
-      + "</div>"
-    ).join("");
+    if (!history || !history.length) {
+      el.innerHTML = '<p style="margin-top:14px;">还没有记录。分析完一个岗位后，这里会留下它。</p>';
+      return;
+    }
+    el.innerHTML = '<div class="card tight" style="margin-top:12px;">' + history.map(h => `
+      <div style="padding:10px 0; border-bottom:1px solid var(--border); cursor:pointer;" onclick="openHistory('${h.session_id}')">
+        <div style="font-weight:600;">${esc(h.position || "未命名岗位")}</div>
+        <div class="muted">${esc(h.score ?? "?")} 分 · ${esc(h.verdict || "")} · ${esc(h.created_at || "")}</div>
+      </div>`).join("") + "</div>";
   } catch (e) { el.textContent = "加载失败"; }
 }
 
@@ -472,23 +685,119 @@ async function openHistory(sessionId) {
   const el = document.getElementById("history_detail");
   try {
     const r = await fetch("/api/history/" + sessionId);
-    if (!r.ok) { el.innerHTML = '<p class="locfail">' + esc(await apiError(r, "打开失败")) + "</p>"; return; }
-    const { advice } = await r.json();
-    el.innerHTML = '<div class="card"><b>' + esc(advice.position) + "</b> "
-      + '<span>' + esc(advice.score) + " 分 " + esc(advice.verdict) + "</span>"
-      + "<p>" + esc(advice.conclusion) + "</p>"
-      + "<h3>差什么</h3><ul>" + (advice.gaps || []).map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>"
-      + "<h3>怎么补</h3><p>" + esc(advice.advice) + "</p></div>";
+    if (!r.ok) { el.innerHTML = '<p class="err">' + esc(await apiError(r, "打开失败")) + "</p>"; return; }
+    const { advice, coverage } = await r.json();
+    lastAdvice = advice; lastCoverage = coverage;
+    go("result");
   } catch (e) { el.innerHTML = ""; }
 }
 
-// 启动时问一次真正存在的接口，决定显示登录页还是主界面
-loadSettings();
+// ---------------- 设置 ----------------
+function viewSettings() {
+  const s = readSettings();
+  return `<h1>设置</h1>
+    <p class="muted">Key 只存在这台设备的浏览器里，请求时放在请求头，不写服务端、不进日志。</p>
+    <label>你的 API Key</label>
+    <input id="api_key" type="password" placeholder="sk-…" value="${esc(s.api_key || "")}" autocomplete="off">
+    <label>模型名（可选）</label>
+    <input id="api_model" type="text" placeholder="deepseek-v4-flash" value="${esc(s.model || "")}">
+    <label>服务地址（可选）</label>
+    <input id="api_base" type="text" placeholder="https://api.deepseek.com" value="${esc(s.base_url || "")}">
+    <div class="row">
+      <button onclick="saveSettings()">保存</button>
+      <button class="secondary" onclick="clearSettings()">清除</button>
+    </div>
+    <p class="muted" id="key_hint" style="margin-top:12px;">${hasKey() ? "已保存 Key" : "未填 Key"}</p>
+    <p class="muted">${serverHasKey ? "服务端 .env 里也配了 key。" : "服务端没有配 key，必须填你自己的。"}</p>
+    <div class="card tight" style="margin-top:18px;">
+      <h2>花多少钱</h2>
+      <p class="muted">单份岗位约 4–6 次模型调用，按你自己的模型价格算。DeepSeek 实测单岗约 0.008 元。
+      同一个简历 + 同一个 JD 第二次分析不重复调用。</p>
+    </div>`;
+}
+
+function saveSettings() {
+  localStorage.setItem(LS_KEY, JSON.stringify({
+    api_key: document.getElementById("api_key").value.trim(),
+    model: document.getElementById("api_model").value.trim(),
+    base_url: document.getElementById("api_base").value.trim(),
+  }));
+  updateSub();
+  go("settings");
+  alert("已保存（只在这台设备的浏览器里）");
+}
+function clearSettings() {
+  localStorage.removeItem(LS_KEY);
+  updateSub();
+  go("settings");
+}
+
+// ---------------- 文件选择 / 登录 ----------------
+function pick(inputId) { document.getElementById(inputId).click(); }
+
+function bindHandlers() {
+  const jdFile = document.getElementById("f_jd_file");
+  if (jdFile && !jdFile.dataset.bound) {
+    jdFile.dataset.bound = "1";
+    jdFile.addEventListener("change", ev => {
+      const f = ev.target.files[0];
+      const lab = document.getElementById("jd_picked");
+      if (!f) { if (lab) lab.textContent = "未选择"; return; }
+      if (lab) lab.textContent = "已选择：" + f.name;
+      const ta = document.getElementById("f_jd");
+      if (ta && /\.(txt|md)$/i.test(f.name)) {
+        const rd = new FileReader();
+        rd.onload = () => {
+          const t = String(rd.result || "").trim();
+          if (t) { ta.value = t; if (lab) lab.textContent = "已选择：" + f.name + "（内容已填入上方）"; }
+        };
+        rd.readAsText(f, "UTF-8");
+      }
+    });
+  }
+  const rf = document.getElementById("f_resume_file");
+  if (rf && !rf.dataset.bound) {
+    rf.dataset.bound = "1";
+    rf.addEventListener("change", ev => {
+      const f = ev.target.files[0];
+      const lab = document.getElementById("resume_picked");
+      if (!f) { if (lab) lab.textContent = "未选择"; return; }
+      if (lab) lab.textContent = "已选择：" + f.name;
+      const ta = document.getElementById("f_resume");
+      if (ta && /\.(txt|md)$/i.test(f.name)) {
+        const rd = new FileReader();
+        rd.onload = () => {
+          const t = String(rd.result || "").trim();
+          if (t) { ta.value = t; if (lab) lab.textContent = "已选择：" + f.name + "（内容已填入上方）"; }
+        };
+        rd.readAsText(f, "UTF-8");
+      }
+    });
+  }
+}
+
+async function login() {
+  const fd = new FormData();
+  fd.append("password", document.getElementById("pw").value);
+  const r = await fetch("/api/login", { method: "POST", body: fd });
+  if (r.ok) showApp();
+  else alert(await apiError(r, "口令错误"));
+}
+
+function showApp() { document.getElementById("login").hidden = true; document.getElementById("app").hidden = false; updateSub(); go("home"); }
+function showLogin() { document.getElementById("app").hidden = true; document.getElementById("login").hidden = false; }
+
+// 启动
 fetch("/api/auth").then(r => r.json()).then(s => {
-  updateNoKeyBanner(!!s.has_key);
+  serverHasKey = !!s.has_key;
   if (s.password_required && !s.logged_in) showLogin();
-  else { showApp(); loadStatus(); }
-}).catch(() => { showApp(); loadStatus(); });
+  else { showApp(); }
+  updateSub();
+  if (!hasKey() && !serverHasKey) {
+    // 没 key：直接把用户带到设置页，不让他在表单里白填一遍
+    go("settings");
+  }
+}).catch(() => showApp());
 </script>
 </body>
 </html>
