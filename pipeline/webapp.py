@@ -201,6 +201,8 @@ def analyze(
     _require_auth(token)
     device_id = _ensure_device(device, response)
     creds = _resolve_creds(x_llm_key, x_llm_base_url, x_llm_model)  # 无 key 且无 .env 时这里直接 400，不发起调用
+    if llm.over_daily_limit(device_id):
+        raise HTTPException(status_code=429, detail=f"今天已经用了 {llm._daily_limit()} 次，明天再来。你也可以在设置里换自己的 Key。")
     if resume_file is not None and resume_file.filename:
         _state["resume_name"] = resume_file.filename
     resume = resume_text.strip() or _read_upload(resume_file)
@@ -237,8 +239,7 @@ def analyze(
 def _run_task(task_id: str, resume: str, jd: str, company: str, position: str, creds: dict | None = None, device_id: str = "local") -> None:
     t0 = time.time()
     # BYOK：凭据在这个 worker 线程里设，跑完清空；contextvars 每个线程独立，不会串到别的请求。
-    if creds:
-        llm.set_request_credentials(api_key=creds["api_key"], base_url=creds.get("base_url"), model=creds.get("model"))
+    llm.set_request_credentials(api_key=creds["api_key"] if creds else None, base_url=creds.get("base_url") if creds else None, model=creds.get("model") if creds else None, device_id=device_id)
 
     def on_step(n: int, name: str) -> None:
         with _lock:
@@ -262,8 +263,7 @@ def _run_task(task_id: str, resume: str, jd: str, company: str, position: str, c
             _tasks[task_id].update(status="error", error=str(e), elapsed=round(time.time() - t0, 1))
         store.save_task(task_id, status="error", error=str(e), elapsed=round(time.time() - t0, 1))
     finally:
-        if creds:
-            llm.clear_request_credentials()
+        llm.clear_request_credentials()
 
 
 def _load_task(task_id: str) -> dict:
@@ -316,19 +316,20 @@ def jd_parse(
 ):
     """只解析 JD：不需要简历，一次调用，同步返回（约 5–10 秒）。"""
     _require_auth(token)
-    _ensure_device(device, response)
+    device_id = _ensure_device(device, response)
     creds = _resolve_creds(x_llm_key, x_llm_base_url, x_llm_model)
     if not (jd_text or "").strip():
         raise HTTPException(status_code=400, detail="请先把岗位 JD 粘贴进来")
     try:
-        if creds:
-            llm.set_request_credentials(
-                api_key=creds["api_key"], base_url=creds.get("base_url"), model=creds.get("model")
-            )
+        llm.set_request_credentials(
+            api_key=creds["api_key"] if creds else None,
+            base_url=creds.get("base_url") if creds else None,
+            model=creds.get("model") if creds else None,
+            device_id=device_id,
+        )
         data = steps.jd_only(jd_text, position.strip())
     finally:
-        if creds:
-            llm.clear_request_credentials()
+        llm.clear_request_credentials()
     if "error" in data:
         raise HTTPException(status_code=502, detail="JD 解析失败：%s" % data["error"])
     return data
@@ -401,15 +402,13 @@ def task_advisor(
     profile = json.loads((d / "01_profile.json").read_text(encoding="utf-8"))
     jd = json.loads((d / "02_jd_analysis.json").read_text(encoding="utf-8"))
     advice = t["result"]["advice"]
-    if creds:
-        llm.set_request_credentials(api_key=creds["api_key"], base_url=creds.get("base_url"), model=creds.get("model"))
+    llm.set_request_credentials(api_key=creds["api_key"] if creds else None, base_url=creds.get("base_url") if creds else None, model=creds.get("model") if creds else None, device_id=device_id)
     try:
         adv = advisor.resume_advisor(
             resume_text, profile, jd, advice, position=advice.get("position", "") or ""
         )
     finally:
-        if creds:
-            llm.clear_request_credentials()
+        llm.clear_request_credentials()
     if "error" in adv:
         raise HTTPException(status_code=502, detail="简历顾问没生成成功，请再点一次")
     (d / "06_resume_advisor.json").write_text(
@@ -577,14 +576,12 @@ def task_ask(
     s = store.get_session_by_keys(device_id, resume_sha, jd_sha, advice.get("position", ""))
     session_id = s["session_id"] if s else ""
 
-    if creds:
-        llm.set_request_credentials(api_key=creds["api_key"], base_url=creds.get("base_url"), model=creds.get("model"))
+    llm.set_request_credentials(api_key=creds["api_key"] if creds else None, base_url=creds.get("base_url") if creds else None, model=creds.get("model") if creds else None, device_id=device_id)
     try:
         system = steps._fill(steps._load_prompt("07_ask.md"), SUMMARY=summary, QUESTION=question)
         data = llm.chat_json(system=system, user="", temperature=0.2, step="07_ask")
     finally:
-        if creds:
-            llm.clear_request_credentials()
+        llm.clear_request_credentials()
 
     if isinstance(data, dict) and "error" in data:
         raise HTTPException(status_code=502, detail="追问生成失败，请再试一次")
@@ -605,6 +602,21 @@ def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
+def _lan_ips() -> list:
+    """枚举本机 IPv4 地址，跳过回环与链路本地（169.254.*）。"""
+    import socket
+    ips = []
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if ip.startswith("127.") or ip.startswith("169.254.") or ip in ips:
+                continue
+            ips.append(ip)
+    except OSError:
+        pass
+    return ips
+
+
 def main(argv=None) -> int:
     global _PASSWORD
     import argparse
@@ -613,14 +625,30 @@ def main(argv=None) -> int:
     parser.add_argument("--host", default="127.0.0.1", help="默认 127.0.0.1；手机访问用 0.0.0.0（需口令）")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--password", default=_PASSWORD, help="访问口令（公网/局域网务必设置）")
+    parser.add_argument("--lan", action="store_true", help="简写：等价 --host 0.0.0.0（局域网/手机访问）")
     args = parser.parse_args(argv)
 
+    if args.lan:
+        args.host = "0.0.0.0"
+
     _PASSWORD = args.password or os.environ.get("WEB_PASSWORD", "")
-    if _PASSWORD:
-        print("已启用口令保护")
-    if not args.host.startswith("127.") and args.host != "localhost" and not _PASSWORD:
-        print("错误：--host 0.0.0.0（局域网/公网可达）时必须设置 --password 口令，否则拒绝启动", file=sys.stderr)
+    is_remote = not args.host.startswith("127.") and args.host != "localhost"
+    if is_remote and not _PASSWORD:
+        print(
+            "错误：你让服务对局域网/公网开放（--host 0.0.0.0 或 --lan），但没设访问口令。\n"
+            "没有口令，任何连上你网络的人都能用你的服务、花你的 API 钱。\n"
+            "请加 --password 你的口令 再启动；口令自己记住即可，不会回显。",
+            file=sys.stderr,
+        )
         return 1
+
+    print(f"本机访问：http://127.0.0.1:{args.port}", flush=True)
+    for ip in _lan_ips():
+        print(f"手机访问：http://{ip}:{args.port}", flush=True)
+    if _PASSWORD:
+        print("访问口令：已设置（不回显）", flush=True)
+    else:
+        print("访问口令：未设置（仅本机可访问）", flush=True)
 
     import uvicorn
 

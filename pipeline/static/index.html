@@ -519,6 +519,7 @@ function viewResult() {
       </div>
       ${locFail ? '<p class="err" style="margin-top:8px;">地点判定 FAIL，已一票否决</p>' : ""}
       ${a.location_note ? '<p class="muted" style="margin-top:8px;">地点说明：' + esc(a.location_note) + "</p>" : ""}
+      ${a._guard ? '<p class="err" style="margin-top:8px;">以下引用查不到原文，请人工核对：' + esc(((a._guard.jd_unmatched || []).concat(a._guard.resume_unmatched || [])).join("、")) + "</p>" : ""}
     </div>`;
 
   // 卡片 2：四维 + 依据

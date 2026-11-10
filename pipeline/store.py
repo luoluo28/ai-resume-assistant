@@ -123,6 +123,36 @@ def get_or_create_user(device_id: str) -> None:
             conn.execute("UPDATE users SET last_seen = ? WHERE device_id = ?", (_now(), device_id))
 
 
+def incr_daily_count(device_id: str, limit: int) -> bool:
+    """今日真实调用 +1；跨天自动重置；已达上限返回 False 不 +1。"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    with _conn() as conn:
+        row = conn.execute("SELECT daily_date, daily_count FROM users WHERE device_id = ?", (device_id,)).fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO users (device_id, created_at, last_seen, daily_date, daily_count) VALUES (?,?,?,?,1)",
+                (device_id, _now(), _now(), today),
+            )
+            return True
+        if row["daily_date"] != today:
+            conn.execute("UPDATE users SET daily_date=?, daily_count=1 WHERE device_id=?", (today, device_id))
+            return True
+        if row["daily_count"] >= limit:
+            return False
+        conn.execute("UPDATE users SET daily_count = daily_count + 1 WHERE device_id=?", (device_id,))
+        return True
+
+
+def over_daily_limit(device_id: str, limit: int) -> bool:
+    """只看不增：是否已超今日上限。"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    with _conn() as conn:
+        row = conn.execute("SELECT daily_date, daily_count FROM users WHERE device_id = ?", (device_id,)).fetchone()
+    if row is None or row["daily_date"] != today:
+        return False
+    return row["daily_count"] >= limit
+
+
 # ---------------- tasks ----------------
 
 def save_task(task_id: str, **fields) -> None:

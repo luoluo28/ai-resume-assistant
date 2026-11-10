@@ -41,9 +41,9 @@ _CREDS: contextvars.ContextVar = contextvars.ContextVar("llm_request_creds", def
 _THINKING_MODE = os.environ.get("LLM_THINKING", "auto").strip().lower()
 
 
-def set_request_credentials(api_key: str | None = None, base_url: str | None = None, model: str | None = None) -> None:
+def set_request_credentials(api_key: str | None = None, base_url: str | None = None, model: str | None = None, device_id: str | None = None) -> None:
     """设置当前请求的凭据（Web 服务在 worker 线程开头调用，请求结束调用 clear 清空）。"""
-    _CREDS.set({"api_key": api_key, "base_url": base_url, "model": model})
+    _CREDS.set({"api_key": api_key, "base_url": base_url, "model": model, "device_id": device_id})
 
 
 def clear_request_credentials() -> None:
@@ -51,7 +51,7 @@ def clear_request_credentials() -> None:
 
 
 def _resolved() -> dict:
-    """解析本次调用实际用的 base_url / model / api_key：请求级优先，其次 .env，再其次默认。"""
+    """解析本次调用实际用的 base_url / model / api_key / device_id：请求级优先，其次 .env，再其次默认。"""
     c = _CREDS.get() or {}
     base_url = (
         c.get("base_url")
@@ -71,7 +71,8 @@ def _resolved() -> dict:
         or os.environ.get("DEEPSEEK_API_KEY")
         or ""
     ).strip()
-    return {"base_url": base_url, "model": model, "api_key": api_key}
+    device_id = (c.get("device_id") or "local").strip() or "local"
+    return {"base_url": base_url, "model": model, "api_key": api_key, "device_id": device_id}
 
 
 def env_has_key() -> bool:
@@ -169,6 +170,38 @@ def _log_call(step: str, prompt_chars: int, usage: dict) -> None:
         pass
 
 
+class DailyQuotaExceeded(Exception):
+    """今日真实模型调用次数已达上限。"""
+
+
+def _daily_limit() -> int:
+    try:
+        return int(os.environ.get("DAILY_LIMIT", "30") or "30")
+    except (TypeError, ValueError):
+        return 30
+
+
+def _ensure_daily_quota(device_id: str) -> None:
+    """每次真实模型调用前计数检查（缓存命中不走这里）。0=不限；跨天自动重置。"""
+    limit = _daily_limit()
+    if limit <= 0:
+        return
+    from . import store
+    if not store.incr_daily_count(device_id, limit):
+        raise DailyQuotaExceeded(
+            f"今天已经用了 {limit} 次，明天再来。你也可以在设置里换自己的 Key。"
+        )
+
+
+def over_daily_limit(device_id: str) -> bool:
+    """只看不增：是否已超今日上限（供 Web 接口在提交任务前同步返回 429）。"""
+    limit = _daily_limit()
+    if limit <= 0:
+        return False
+    from . import store
+    return store.over_daily_limit(device_id, limit)
+
+
 def _check_budget() -> None:
     if _LIMIT and _STATS["calls"] >= _LIMIT:
         raise BudgetExceeded(f"已达本次调用上限 {_LIMIT} 次，停止调用")
@@ -202,6 +235,7 @@ def chat_json(system: str, user: str = "", *, temperature: float = 0.1, max_toke
             "缺少 API 密钥。请在本地 .env 填 LLM_API_KEY（或 DEEPSEEK_API_KEY），"
             "或通过请求头 X-LLM-Key 传入自己的 key；本仓库为 public，密钥绝不写入代码或提交。"
         )
+    _ensure_daily_quota(cred["device_id"])
 
     payload = {
         "model": model,

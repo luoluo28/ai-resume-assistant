@@ -9,6 +9,7 @@ import hashlib
 import json
 import re
 import sys
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -277,7 +278,7 @@ def apply_advice(profile: dict, jd: dict, values: dict, *, position: str = "", l
     j_in = slim_jd_analysis(jd) if lite else jd
     key = _mkey(
         json.dumps(
-            {"p": p_in, "j": j_in, "v": values, "pos": position, "v3": "advice-v4"},
+            {"p": p_in, "j": j_in, "v": values, "pos": position, "v3": "advice-v5"},
             ensure_ascii=False,
             sort_keys=True,
         )
@@ -306,6 +307,29 @@ def apply_advice(profile: dict, jd: dict, values: dict, *, position: str = "", l
         result["position"] = position  # 输入侧元数据覆盖，防止模型改写
     _cache_put(key, "advice", result)
     return result
+
+
+def _norm_quote(s: str) -> str:
+    """归一化用于子串匹配：NFKC + 小写 + 去掉空白与标点（只留字母数字与中文）。
+
+    去掉标点是因为模型常把「Python、SQL」写成「Python, SQL」，标点不同不该误判为编造。
+    """
+    s = unicodedata.normalize("NFKC", s or "").lower()
+    return re.sub(r"[^0-9a-z一-鿿]+", "", s)
+
+
+def _guard_quotes(advice: dict, resume_text: str, jd_text: str) -> dict:
+    """04 护栏：校验 jd_quote / resume_quote 是否真能在原文里找到，找不到标记 _guard（不自动改写）。"""
+    guard = {}
+    jd_quote = (advice.get("jd_quote") or "").strip()
+    resume_quote = (advice.get("resume_quote") or "").strip()
+    if jd_quote and _norm_quote(jd_quote) not in _norm_quote(jd_text):
+        guard["jd_unmatched"] = [jd_quote]
+    if resume_quote and _norm_quote(resume_quote) not in _norm_quote(resume_text):
+        guard["resume_unmatched"] = [resume_quote]
+    if guard:
+        advice["_guard"] = guard
+    return advice
 
 
 def render_advice(advice: dict) -> str:
@@ -388,8 +412,9 @@ def run_pipeline(resume_text: str, jd_text: str, company_text: str = "", *, run_
 
     _step(4, "apply_advice")
     advice = apply_advice(profile, jd, values, position=position)
-    _dump(run_dir, "04_apply_advice.json", advice)
     _ensure_no_error(advice, "apply_advice")
+    advice = _guard_quotes(advice, resume_text, jd_text)
+    _dump(run_dir, "04_apply_advice.json", advice)
 
     if position == "未提供岗位名":
         advice["note"] = (advice.get("note", "") + " 岗位名未提供，按占位处理。").strip()

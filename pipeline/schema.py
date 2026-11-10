@@ -120,6 +120,8 @@ class ApplyAdvice:
     score_reasons: dict = field(default_factory=dict)  # 四维各一句依据
     location_verdict: str = ""  # PASS/FLAG/FAIL
     location_note: str = ""  # 地点判定的具体理由
+    jd_quote: str = ""  # 引用的 JD 原句（04 护栏用，逐字复制）
+    resume_quote: str = ""  # 对应的简历原句（04 护栏用，逐字复制）
     reasons: list = field(default_factory=list)
     gaps: list = field(default_factory=list)
     advice: str = ""
@@ -137,6 +139,8 @@ class ApplyAdvice:
             score_reasons=_dict(d.get("score_reasons")),
             location_verdict=_str(d.get("location_verdict")),
             location_note=_str(d.get("location_note")),
+            jd_quote=_str(d.get("jd_quote")),
+            resume_quote=_str(d.get("resume_quote")),
             reasons=[_str(x) for x in _list(d.get("reasons"))],
             gaps=[_str(x) for x in _list(d.get("gaps"))],
             advice=_str(d.get("advice")),
