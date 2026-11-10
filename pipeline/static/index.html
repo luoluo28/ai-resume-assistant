@@ -515,11 +515,9 @@ function viewResult() {
     <button class="btn-block secondary" id="btn_ask" onclick="askOnce()">问</button>
     <div id="ask_log" class="ask-log"></div></div>`;
 
-  // 导出
-  h += `<div class="row">
-    <button class="ghost" onclick="exportFile('xlsx')">导出 Excel</button>
-    <button class="ghost" onclick="exportFile('pdf')">导出 PDF</button>
-  </div>`;
+  // 导出：默认只给 PDF 一份（用户反馈：单份报告不该默认给 Excel）
+  h += `<button class="btn-block" onclick="exportFile('pdf')">下载投递建议 PDF</button>
+    <p class="muted" style="text-align:center;margin-top:10px;">要台账表格时再导：<a href="#" class="link" onclick="exportFile('xlsx');return false;">导出 Excel</a></p>`;
   return h;
 }
 
