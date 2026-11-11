@@ -1,0 +1,300 @@
+"""OpenAI 兼容接口调用封装（/chat/completions），默认对接 DeepSeek。
+
+- 密钥从环境变量 LLM_API_KEY（兼容旧名 DEEPSEEK_API_KEY）或请求级凭据（Web BYOK 的 X-LLM-Key 头）读取，绝不硬编码、绝不给默认值、绝不落盘。
+- 可换任意 OpenAI 兼容模型：LLM_BASE_URL + LLM_MODEL + LLM_API_KEY。
+- 仓库根目录若有 .env 会自动读取（不覆盖已存在的环境变量）。
+- 调用时用 response_format=json_object；解析失败时返回带 error 的兜底 dict，不抛异常。
+"""
+from __future__ import annotations
+
+import contextvars
+import hashlib
+import json
+import os
+import re
+from pathlib import Path
+
+import requests
+
+
+def _load_dotenv() -> None:
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+_load_dotenv()
+
+# 请求级凭据：Web 的 BYOK（用户自带 key）通过这里透传，只透传不落盘、不进日志。
+# 用 contextvars 而非全局变量：每个线程/协程有独立副本，并发请求不会串 key。
+_CREDS: contextvars.ContextVar = contextvars.ContextVar("llm_request_creds", default=None)
+
+# 思考模式开关：官方默认是 enabled，会让输出配额被思考过程吃掉（max_tokens 小时 content 为空）。
+# 本流水线全是结构化抽取/打分，不需要思考过程，所以 DeepSeek 默认关闭 thinking。
+# 想开启：LLM_THINKING=enabled；第三方厂商不认这个字段时设 LLM_THINKING=auto（不传该参数）。
+_THINKING_MODE = os.environ.get("LLM_THINKING", "auto").strip().lower()
+
+
+def set_request_credentials(api_key: str | None = None, base_url: str | None = None, model: str | None = None, device_id: str | None = None) -> None:
+    """设置当前请求的凭据（Web 服务在 worker 线程开头调用，请求结束调用 clear 清空）。"""
+    _CREDS.set({"api_key": api_key, "base_url": base_url, "model": model, "device_id": device_id})
+
+
+def clear_request_credentials() -> None:
+    _CREDS.set(None)
+
+
+def _resolved() -> dict:
+    """解析本次调用实际用的 base_url / model / api_key / device_id：请求级优先，其次 .env，再其次默认。"""
+    c = _CREDS.get() or {}
+    base_url = (
+        c.get("base_url")
+        or os.environ.get("LLM_BASE_URL")
+        or os.environ.get("DEEPSEEK_BASE_URL")
+        or "https://api.deepseek.com"
+    ).strip().rstrip("/")
+    model = (
+        c.get("model")
+        or os.environ.get("LLM_MODEL")
+        or os.environ.get("DEEPSEEK_MODEL")
+        or "deepseek-v4-flash"   # 与 README 一致；deepseek-chat 官方已于 2026-07-24 弃用
+    ).strip()
+    api_key = (
+        c.get("api_key")
+        or os.environ.get("LLM_API_KEY")
+        or os.environ.get("DEEPSEEK_API_KEY")
+        or ""
+    ).strip()
+    device_id = (c.get("device_id") or "local").strip() or "local"
+    return {"base_url": base_url, "model": model, "api_key": api_key, "device_id": device_id}
+
+
+def env_has_key() -> bool:
+    """环境（.env）里是否配了可用 key（Web 端据此决定要不要提示用户填 key）。"""
+    return bool(os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY"))
+
+
+def key_fingerprint() -> str:
+    """当前 key 的指纹：只取 sha256 前 8 位，不可逆。
+
+    用途：① 缓存命名空间（多人共用一台服务时，不同人的 key 落在不同缓存）；
+    ② 批次 3 的每人每日调用上限按同一指纹统计。绝不落 key 原文。
+    """
+    key = _resolved()["api_key"]
+    if not key:
+        return "nokey"
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:8]
+
+
+def cache_salt() -> str:
+    """缓存命名空间：base_url + model + 用户 key 指纹。
+
+    - 换模型/换厂商 → 盐变，旧缓存自动失效（不会"换了模型还是旧结果"）；
+    - 换人（不同 key）→ 盐也变，别人不会命中你的分析结果，反之亦然。
+    """
+    c = _resolved()
+    return f"{c['base_url']}|{c['model']}|{key_fingerprint()}"
+
+
+def _thinking_param(base_url: str, model: str) -> dict:
+    if _THINKING_MODE in ("enabled", "disabled"):
+        return {"thinking": {"type": _THINKING_MODE}}
+    # auto：只对 DeepSeek 端点自动关闭，避免第三方接口不认未知字段报 400
+    if "deepseek" in base_url or model.lower().startswith("deepseek"):
+        return {"thinking": {"type": "disabled"}}
+    return {}
+
+# ---- 调用计量：批量跑完能看见"到底花了几次、多少字" ----
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+CALL_LOG = DATA_DIR / "api_calls.jsonl"
+_STATS = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "prompt_chars": 0, "cache_hits": 0}
+_LIMIT = 0
+
+
+class BudgetExceeded(Exception):
+    """真实调用次数已达上限（--budget-calls）。"""
+
+
+def set_call_limit(n: int) -> None:
+    global _LIMIT
+    _LIMIT = max(0, int(n or 0))
+
+
+def budget_left() -> int | None:
+    if not _LIMIT:
+        return None
+    return max(0, _LIMIT - _STATS["calls"])
+
+
+def note_cache_hit() -> None:
+    _STATS["cache_hits"] += 1
+
+
+def stats() -> dict:
+    return dict(_STATS)
+
+
+def reset_stats() -> None:
+    for k in _STATS:
+        _STATS[k] = 0
+
+
+def _log_call(step: str, prompt_chars: int, usage: dict) -> None:
+    _STATS["calls"] += 1
+    _STATS["prompt_chars"] += prompt_chars
+    _STATS["prompt_tokens"] += int(usage.get("prompt_tokens", 0) or 0)
+    _STATS["completion_tokens"] += int(usage.get("completion_tokens", 0) or 0)
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        with CALL_LOG.open("a", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "at": __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "step": step,
+                        "prompt_chars": prompt_chars,
+                        "prompt_tokens": usage.get("prompt_tokens"),
+                        "completion_tokens": usage.get("completion_tokens"),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+    except OSError:
+        pass
+
+
+class DailyQuotaExceeded(Exception):
+    """今日真实模型调用次数已达上限。"""
+
+
+def _daily_limit() -> int:
+    try:
+        return int(os.environ.get("DAILY_LIMIT", "30") or "30")
+    except (TypeError, ValueError):
+        return 30
+
+
+def _ensure_daily_quota(device_id: str) -> None:
+    """每次真实模型调用前计数检查（缓存命中不走这里）。0=不限；跨天自动重置。"""
+    limit = _daily_limit()
+    if limit <= 0:
+        return
+    from . import store
+    if not store.incr_daily_count(device_id, limit):
+        raise DailyQuotaExceeded(
+            f"今天已经用了 {limit} 次，明天再来。你也可以在设置里换自己的 Key。"
+        )
+
+
+def over_daily_limit(device_id: str) -> bool:
+    """只看不增：是否已超今日上限（供 Web 接口在提交任务前同步返回 429）。"""
+    limit = _daily_limit()
+    if limit <= 0:
+        return False
+    from . import store
+    return store.over_daily_limit(device_id, limit)
+
+
+def _check_budget() -> None:
+    if _LIMIT and _STATS["calls"] >= _LIMIT:
+        raise BudgetExceeded(f"已达本次调用上限 {_LIMIT} 次，停止调用")
+
+
+def _send(base_url: str, api_key: str, payload: dict) -> dict:
+    resp = requests.post(
+        f"{base_url}/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"},
+        json=payload,
+        timeout=120,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def chat_json(system: str, user: str = "", *, temperature: float = 0.1, max_tokens: int = 0, step: str = "") -> dict:
+    """调用 OpenAI 兼容接口并要求 JSON 输出，返回解析后的 dict（解析失败时含 error 字段）。
+
+    max_tokens=0 时不限制；step 仅用于计量日志（如 "04_apply_advice"）。
+
+    思考型模型（如 *-pro / reasoner）会先消耗输出配额做思考，max_tokens 偏小时
+    `content` 会返回空字符串。这种情况禁止静默走降级占位：先自动加倍 max_tokens
+    重试一次，仍为空则抛出明确的中文错误。
+    """
+    _check_budget()
+    cred = _resolved()
+    base_url, model, api_key = cred["base_url"], cred["model"], cred["api_key"]
+    if not api_key:
+        raise RuntimeError(
+            "缺少 API 密钥。请在本地 .env 填 LLM_API_KEY（或 DEEPSEEK_API_KEY），"
+            "或通过请求头 X-LLM-Key 传入自己的 key；本仓库为 public，密钥绝不写入代码或提交。"
+        )
+    _ensure_daily_quota(cred["device_id"])
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": temperature,
+    }
+    payload.update(_thinking_param(base_url, model))
+    if max_tokens:
+        payload["max_tokens"] = max_tokens
+
+    body = _send(base_url, api_key, payload)
+    choice = (body.get("choices") or [{}])[0]
+    content = ((choice.get("message") or {}).get("content") or "").strip()
+    finish = choice.get("finish_reason")
+    _log_call(step or "chat_json", len(system) + len(user), body.get("usage") or {})
+
+    if not content:
+        retry_tokens = max(1600, (max_tokens or 0) * 2)
+        _check_budget()
+        payload["max_tokens"] = retry_tokens
+        body = _send(base_url, api_key, payload)
+        choice = (body.get("choices") or [{}])[0]
+        content = ((choice.get("message") or {}).get("content") or "").strip()
+        finish = choice.get("finish_reason")
+        _log_call(f"{step or 'chat_json'}#retry", len(system) + len(user), body.get("usage") or {})
+        if not content:
+            raise RuntimeError(
+                f"模型 {model} 返回空内容（finish_reason={finish}，已把 max_tokens 提到 {retry_tokens} 重试一次）。"
+                "如果用的是思考型模型（*-pro / *-reasoner），思考过程会占用输出配额；"
+                "请继续调大 max_tokens，或改用非思考模型（如 deepseek-v4-flash）。"
+            )
+    return parse_json(content)
+
+
+def parse_json(text: str) -> dict:
+    """尽力把模型输出解析成 JSON dict；失败时返回 {'error': ..., 'raw': ...}。"""
+    text = (text or "").strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.lower().startswith("json"):
+            text = text[4:]
+        text = text.strip()
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        m = re.search(r"\{.*\}", text, re.S)
+        if m:
+            try:
+                data = json.loads(m.group(0))
+            except json.JSONDecodeError:
+                data = None
+        else:
+            data = None
+
+    if isinstance(data, dict):
+        return data
+    return {"error": "JSON 解析失败", "raw": text[:500]}

@@ -197,8 +197,8 @@ workflow:
         isInLoop: false
         sourceType: llm
         targetType: llm
-      id: 1781148014889-source-1781148797076-target
-      source: '1781148014889'
+      id: 1781160000001-source-1781148797076-target
+      source: '1781160000001'
       sourceHandle: source
       target: '1781148797076'
       targetHandle: target
@@ -208,9 +208,33 @@ workflow:
         isInIteration: false
         isInLoop: false
         sourceType: llm
-        targetType: answer
-      id: 1781148797076-source-1781151602932-target
+        targetType: llm
+      id: 1781148014889-source-1781160000001-target
+      source: '1781148014889'
+      sourceHandle: source
+      target: '1781160000001'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: 1781148797076-source-1781170000001-target
       source: '1781148797076'
+      sourceHandle: source
+      target: '1781170000001'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: answer
+      id: 1781170000001-source-1781151602932-target
+      source: '1781170000001'
       sourceHandle: source
       target: '1781151602932'
       targetHandle: target
@@ -221,7 +245,12 @@ workflow:
         selected: false
         title: 用户输入
         type: start
-        variables: []
+        variables:
+        - label: 公司官网文本
+          max_length: 4096
+          required: false
+          type: paragraph
+          variable: company_website_text
       height: 72
       id: '1781018406513'
       position:
@@ -310,8 +339,8 @@ workflow:
           completion_params:
             temperature: 0.7
           mode: chat
-          name: deepseek-r1:7b
-          provider: langgenius/ollama/ollama
+          name: deepseek-chat
+          provider: langgenius/deepseek/deepseek
         prompt_template:
         - id: c7c200a5-5c49-43f4-9972-8f4f5f9dea68
           role: system
@@ -412,13 +441,13 @@ workflow:
           completion_params:
             temperature: 0.3
           mode: chat
-          name: deepseek-r1:7b
-          provider: langgenius/ollama/ollama
+          name: deepseek-chat
+          provider: langgenius/deepseek/deepseek
         prompt_template:
         - id: 59ae5011-ad50-44e2-8b02-8358bb690462
           role: system
           text: "{{#context#}}# 角色\n你是一位专业的简历信息提取专家，擅长从简历文本中提取结构化字段。\n\n# 输入\n以下是用户上传的简历文件解析出的纯文本内容：\n\
-            {{#你的Document Extractor节点.outputs.text#}}\n\n# 任务\n从上述文本中提取以下5个必填字段（若某字段缺失，则输出空字符串\
+            {{#1781140744931.text#}}\n\n# 任务\n从上述文本中提取以下5个必填字段（若某字段缺失，则输出空字符串\
             \ \"\"）：\n1. target_position：目标求职岗位（提取最明确的一个，如“AI产品经理”“后端开发工程师”）\n2. education：教育经历（包含学校名称、学历层次、专业、毕业年份，格式示例：\"\
             XX大学 本科 计算机科学与技术 2025\"）\n3. skills：技能清单（提取所有技术/工具/语言等技能，用逗号分隔）\n4. projects：项目/实习经历描述（保留关键描述，不要过度缩写）\n\
             5. experience：工作年限或应届状态（提取数字+年，或“应届生”“在校生”）\n\n# 输出格式\n严格输出 JSON，不要包含任何其他解释文字：\n\
@@ -528,8 +557,8 @@ workflow:
           completion_params:
             temperature: 0.7
           mode: chat
-          name: deepseek-r1:7b
-          provider: langgenius/ollama/ollama
+          name: deepseek-chat
+          provider: langgenius/deepseek/deepseek
         prompt_template:
         - id: 2dda881f-e897-48c7-a355-acb0d49d98d1
           role: system
@@ -556,17 +585,17 @@ workflow:
           role: user
           text: '用户画像信息：
 
-            {{user_profile}}
+            {{#conversation.user_profile#}}
 
 
             完整简历文本：
 
-            {{full_resume_context}}
+            {{#1781143480128.result#}}
 
 
             用户提供的岗位信息（JD）：
 
-            {{userputquery}}
+            {{#sys.query#}}
 
 
             请根据以上信息，完成岗位需求拆解与供需分析：
@@ -582,7 +611,7 @@ workflow:
           role: assistant
           text: '用户画像信息：
 
-            {{user_profile}}
+            {{#conversation.user_profile#}}
 
 
             完整简历文本：
@@ -627,6 +656,40 @@ workflow:
         context:
           enabled: true
           variable_selector:
+          - sys
+          - query
+        model:
+          completion_params:
+            temperature: 0.3
+          mode: chat
+          name: deepseek-chat
+          provider: langgenius/deepseek/deepseek
+        prompt_template:
+        - id: 4b7c9d1e-2f3a-4b5c-8d6e-9f0a1b2c3d4e
+          role: system
+          text: "{{#context#}}\n\n公司官网 about / 价值观页文本：\n{{#1781018406513.company_website_text#}}\n\n# 任务：分析这家公司的企业价值观，并反推简历应对策略\n\n请严格按以下步骤执行，只依据给定文本，禁止推测：\n\n步骤 1【摘原文】从「公司官网文本」中摘出与价值观、文化、用人观直接相关的原句，逐条列出，并标注是原文原话。\n\n步骤 2【归纳标签】把步骤 1 的原句归纳成 3–5 个文化标签，每个标签一句话概括，并在其后附上步骤 1 里对应的官网原句作为佐证。\n\n步骤 3【映射能力】针对每个标签，反推「简历里应提供什么行为证据」才能对上该标签，给出具体可写的证据方向（例如某次协作方式、某段抗压经历）。\n\n步骤 4【给证据建议】综合以上，用一句话回答：这家公司会录用什么样的人。\n\n# 输出格式（严格遵守）\n① 文化标签（3–5 个，每个附一句官网原句佐证）\n② 每个标签对应的简历行为证据方向\n③ 一句话：「这家公司会录用 ______ 的人」\n\n# 关键约束\n- 若「公司官网文本」为空、或与价值观无关，直接输出「缺企业信息，建议补官网链接」，不要输出任何推测。"
+        selected: false
+        title: 企业价值观分析
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1781160000001'
+      position:
+        x: 2050
+        y: 493
+      positionAbsolute:
+        x: 2050
+        y: 493
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: true
+          variable_selector:
           - '1781148014889'
           - text
         memory:
@@ -645,42 +708,51 @@ workflow:
           completion_params:
             temperature: 0.3
           mode: chat
-          name: deepseek-r1:7b
-          provider: langgenius/ollama/ollama
+          name: deepseek-chat
+          provider: langgenius/deepseek/deepseek
         prompt_template:
         - id: 1b1f8796-182b-4a93-803d-b3ec99871bfa
           role: system
-          text: '{{#context#}}你是一位资深的 AI 方向简历优化顾问。你的任务是根据用户简历和岗位分析，输出可直接复制的优化内容。
+          text: |
+            {{#context#}}
 
-            ### 优化原则
+            岗位需求分析：
+            {{#1781148014889.text#}}
 
-            1.  **真实性锚定**：**严禁编造不存在的项目、经历或技能**。
+            企业价值观分析：
+            {{#1781160000001.text#}}
 
-            2.  **量化成果**：所有经历和项目都必须有量化数据支撑。
+            用户提供的岗位信息（JD）：
+            {{#sys.query#}}
 
-            3.  **STAR 法则**：将校园项目或工作经历，按照 STAR 法则重组。
+            简历关键字段：
+            {{#conversation.user_profile#}}
 
-            4.  **专业性**：将所有口语化表达转换为专业术语。
+            # 任务：基于以上信息，产出一份投递建议
 
-            ### 输出格式（请严格遵守）
+            请严格按以下步骤执行，只依据给定信息，禁止编造简历内容：
 
-            **1. 优化后简历（全文）**
+            步骤 1【定结论】比较简历与 JD，三选一给出结论：建议投 / 不建议投 / 先补再投。并给出 0–100 的匹配分数。
 
-            [此处放置优化后的完整简历]
+            步骤 2【找理由】给出 3 条理由。每条必须：引用 JD 原文用词（加「」）+ 引用简历原句或字段（加「」），说明匹配或不匹配。
 
-            **2. 核心优化说明**
+            步骤 3【找差距】列出具体差距，例如「缺一个能量化的项目」「缺团队协作证据」。禁止写「需要提升综合能力」这类空话。
 
-            - **项目经历**：[做了什么优化，为什么这么做]
+            步骤 4【给建议】给出本周可执行的一件具体事。
 
-            - **技能清单**：[做了什么优化，为什么这么做]
+            步骤 5【写招呼】写一句用这家公司语言风格的打招呼第一句。
 
-            **3. 岗位匹配度评估与建议**
-
-            - **匹配分数**：[0-100%]
-
-            - **优势分析**：[用户与JD非常匹配的优势]
-
-            - **差距与建议**：[提升的方向，例如完善某类技能或补充某个项目类型]'
+            # 输出格式（严格遵守）
+            严格输出 JSON，不要包含任何其他解释文字：
+            {
+              "position": "岗位名",
+              "conclusion": "建议投|不建议投|先补再投",
+              "score": 78,
+              "reasons": ["理由1", "理由2", "理由3"],
+              "gaps": ["具体差距1", "具体差距2"],
+              "advice": "本周可执行的一件具体事",
+              "opening_line": "打招呼第一句"
+            }
         - id: 85f858ac-fe4b-4c2c-947b-858cc5e92839
           role: user
           text: ''
@@ -704,7 +776,39 @@ workflow:
       type: custom
       width: 241
     - data:
-        answer: '{{#1781148797076.text#}}{{#1781148014889.text#}}'
+        code: "import json\n\n\ndef main(**kwargs):\n    arg1 = kwargs.get('arg1', '')\n\n    text = (arg1 or '').strip()\n    if text.startswith('```'):\n        text = text.strip('`')\n        if text.startswith('json'):\n            text = text[4:]\n        text = text.strip()\n\n    try:\n        data = json.loads(text)\n    except Exception:\n        return {\n            'human_text': (arg1 or ''),\n            'json_text': json.dumps({'error': 'JSON 解析失败，请检查模型输出'}, ensure_ascii=False),\n        }\n\n    position = data.get('position', '')\n    conclusion = data.get('conclusion', '')\n    score = data.get('score', '')\n    reasons = data.get('reasons', [])\n    gaps = data.get('gaps', [])\n    advice = data.get('advice', '')\n    opening = data.get('opening_line', '')\n\n    lines = []\n    lines.append('1. 结论：' + str(conclusion) + (('（匹配度 ' + str(score) + '%）') if score != '' else ''))\n    lines.append('2. 理由：')\n    if isinstance(reasons, list):\n        for i, r in enumerate(reasons, 1):\n            lines.append('   ' + str(i) + '. ' + str(r))\n    lines.append('3. 差什么：')\n    if isinstance(gaps, list):\n        for g in gaps:\n            lines.append('   - ' + str(g))\n    lines.append('4. 怎么补：' + str(advice))\n    lines.append('5. 打招呼第一句：' + str(opening))\n    human_text = chr(10).join(lines)\n\n    out = {\n        '岗位名': position,\n        '结论': conclusion,\n        '分数': score,\n        '理由': reasons,\n        '差距': gaps,\n        '建议': advice,\n    }\n    json_text = json.dumps(out, ensure_ascii=False, indent=2)\n\n    return {'human_text': human_text, 'json_text': json_text}"
+        code_language: python3
+        outputs:
+          human_text:
+            children: null
+            type: string
+          json_text:
+            children: null
+            type: string
+        selected: false
+        title: 结构化输出
+        type: code
+        variables:
+        - value_selector:
+          - '1781148797076'
+          - text
+          value_type: string
+          variable: arg1
+      height: 51
+      id: '1781170000001'
+      position:
+        x: 2650
+        y: 493
+      positionAbsolute:
+        x: 2650
+        y: 493
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        answer: "{{#1781148014889.text#}}\n\n{{#1781160000001.text#}}\n\n{{#1781170000001.human_text#}}\n\n【结构化 JSON】\n```json\n{{#1781170000001.json_text#}}\n```"
         selected: false
         title: 直接回复
         type: answer
